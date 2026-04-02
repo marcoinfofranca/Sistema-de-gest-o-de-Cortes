@@ -1,0 +1,132 @@
+{
+  "entities": {
+    "User": {
+      "title": "Usuário",
+      "description": "Perfil de usuário do sistema (Admin ou Barbeiro)",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "perfil": { "type": "string", "enum": ["admin", "barbeiro"] },
+        "ativo": { "type": "boolean" },
+        "criado_em": { "type": "string", "format": "date-time" }
+      },
+      "required": ["nome", "email", "perfil", "ativo"]
+    },
+    "Associado": {
+      "title": "Associado",
+      "description": "Dados do associado que recebe o benefício",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string" },
+        "cpf": { "type": "string" },
+        "data_nascimento": { "type": "string" },
+        "telefone": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "ativo": { "type": "boolean" },
+        "criado_em": { "type": "string", "format": "date-time" }
+      },
+      "required": ["nome", "cpf", "ativo"]
+    },
+    "Fornecedor": {
+      "title": "Fornecedor (Barbeiro)",
+      "description": "Dados da barbearia conveniada",
+      "type": "object",
+      "properties": {
+        "nome": { "type": "string" },
+        "cpf_cnpj": { "type": "string" },
+        "endereco": { "type": "string" },
+        "telefone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "banco": { "type": "string" },
+        "agencia": { "type": "string" },
+        "conta": { "type": "string" },
+        "ativo": { "type": "boolean" },
+        "usuario_id": { "type": "string" },
+        "criado_em": { "type": "string", "format": "date-time" }
+      },
+      "required": ["nome", "cpf_cnpj", "ativo", "usuario_id"]
+    },
+    "ConfiguracaoValor": {
+      "title": "Configuração de Valor",
+      "description": "Valor unitário do corte por período",
+      "type": "object",
+      "properties": {
+        "valor": { "type": "number" },
+        "data_inicio": { "type": "string", "format": "date-time" },
+        "data_fim": { "type": "string", "format": "date-time" },
+        "observacao": { "type": "string" },
+        "criado_por": { "type": "string" },
+        "criado_em": { "type": "string", "format": "date-time" }
+      },
+      "required": ["valor", "data_inicio", "criado_por"]
+    },
+    "ConfiguracaoExpiracao": {
+      "title": "Configuração de Expiração",
+      "description": "Prazo de validade do QR code",
+      "type": "object",
+      "properties": {
+        "dias_validade": { "type": "number" },
+        "data_inicio": { "type": "string", "format": "date-time" },
+        "observacao": { "type": "string" },
+        "criado_por": { "type": "string" },
+        "criado_em": { "type": "string", "format": "date-time" }
+      },
+      "required": ["dias_validade", "data_inicio", "criado_por"]
+    },
+    "QRCode": {
+      "title": "QR Code",
+      "description": "QR code gerado para o associado",
+      "type": "object",
+      "properties": {
+        "associado_id": { "type": "string" },
+        "emitido_em": { "type": "string", "format": "date-time" },
+        "expira_em": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["ativo", "utilizado", "expirado", "cancelado"] },
+        "criado_por": { "type": "string" }
+      },
+      "required": ["associado_id", "emitido_em", "expira_em", "status", "criado_por"]
+    },
+    "Atendimento": {
+      "title": "Atendimento",
+      "description": "Registro de corte realizado",
+      "type": "object",
+      "properties": {
+        "qrcode_id": { "type": "string" },
+        "fornecedor_id": { "type": "string" },
+        "associado_id": { "type": "string" },
+        "data_hora": { "type": "string", "format": "date-time" },
+        "valor_aplicado": { "type": "number" },
+        "status_pagamento": { "type": "string", "enum": ["pendente", "pago"] },
+        "pagamento_id": { "type": "string" }
+      },
+      "required": ["qrcode_id", "fornecedor_id", "associado_id", "data_hora", "valor_aplicado", "status_pagamento"]
+    },
+    "Pagamento": {
+      "title": "Pagamento",
+      "description": "Registro de pagamento ao fornecedor",
+      "type": "object",
+      "properties": {
+        "fornecedor_id": { "type": "string" },
+        "data_pagamento": { "type": "string", "format": "date-time" },
+        "valor_total": { "type": "number" },
+        "forma_pagamento": { "type": "string" },
+        "comprovante_url": { "type": "string" },
+        "criado_por": { "type": "string" },
+        "criado_em": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fornecedor_id", "data_pagamento", "valor_total", "forma_pagamento", "criado_por"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "Perfis de usuários" },
+    "/associados/{associadoId}": { "schema": "Associado", "description": "Lista de associados" },
+    "/fornecedores/{fornecedorId}": { "schema": "Fornecedor", "description": "Lista de barbearias conveniadas" },
+    "/configuracoes_valor/{configId}": { "schema": "ConfiguracaoValor", "description": "Histórico de valores de corte" },
+    "/configuracoes_expiracao/{configId}": { "schema": "ConfiguracaoExpiracao", "description": "Histórico de prazos de expiração" },
+    "/qrcodes/{qrcodeId}": { "schema": "QRCode", "description": "QR codes gerados" },
+    "/atendimentos/{atendimentoId}": { "schema": "Atendimento", "description": "Atendimentos realizados" },
+    "/pagamentos/{pagamentoId}": { "schema": "Pagamento", "description": "Pagamentos realizados" }
+  }
+}

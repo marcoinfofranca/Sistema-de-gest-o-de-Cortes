@@ -1,0 +1,7 @@
+{
+  "name": "Sistema de Gestão de Cortes — Barbearia Conveniada",
+  "description": "Sistema completo para gestão de benefícios de corte de cabelo, geração de QR codes e controle de pagamentos para barbeiros conveniados.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
