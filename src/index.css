@@ -27,14 +27,27 @@
 /* QR Scanner Styles */
 #reader {
   border: none !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}
+
+#reader video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
 }
 
 #reader__scan_region {
-  background: white !important;
+  background: transparent !important;
+  border: none !important;
 }
 
-#reader__dashboard_section_csr button {
-  @apply !px-4 !py-2 !bg-zinc-900 !text-white !rounded-xl !font-bold !text-sm hover:!bg-zinc-800 !transition-all;
+#reader__scan_region img {
+  display: none !important;
+}
+
+#reader__dashboard_section_csr {
+  display: none !important;
 }
 
 #reader__status_span {

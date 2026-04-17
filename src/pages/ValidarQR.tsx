@@ -23,16 +23,23 @@ export default function ValidarQR() {
   const isScanningRef = useRef(false);
 
   useEffect(() => {
-    html5QrCodeRef.current = new Html5Qrcode('reader');
-    startScanner();
+    // Add a slight delay to ensure the container is fully rendered
+    const timer = setTimeout(() => {
+      if (!html5QrCodeRef.current) {
+        html5QrCodeRef.current = new Html5Qrcode('reader');
+      }
+      startScanner();
+    }, 500);
 
     return () => {
+      clearTimeout(timer);
       stopScanner();
     };
   }, []);
 
   const startScanner = async () => {
     if (!html5QrCodeRef.current) return;
+    if (html5QrCodeRef.current.isScanning) return;
     
     try {
       setCameraActive(true);
@@ -42,8 +49,16 @@ export default function ValidarQR() {
       await html5QrCodeRef.current.start(
         { facingMode: "environment" },
         {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
+          fps: 15,
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
+            const qrboxSize = Math.floor(minEdgeSize * 0.7);
+            return {
+              width: qrboxSize,
+              height: qrboxSize
+            };
+          },
+          aspectRatio: 1.0
         },
         onScanSuccess,
         onScanError
@@ -188,13 +203,14 @@ export default function ValidarQR() {
         "bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm overflow-hidden",
         (scanResult || success || validating) ? "hidden" : "block"
       )}>
-        <div id="reader" className="overflow-hidden rounded-2xl border-none aspect-square bg-zinc-50 flex items-center justify-center">
+        <div className="relative overflow-hidden rounded-2xl bg-zinc-50 aspect-square">
           {!cameraActive && !error && (
-            <div className="text-center space-y-4">
-              <RefreshCw className="animate-spin text-zinc-400 mx-auto" size={32} />
+            <div className="absolute inset-0 flex flex-col items-center justify-center space-y-4 z-10 bg-zinc-50">
+              <RefreshCw className="animate-spin text-zinc-400" size={32} />
               <p className="text-zinc-500 font-medium">Iniciando câmera...</p>
             </div>
           )}
+          <div id="reader" className="w-full h-full border-none"></div>
         </div>
         <div className="mt-6 flex items-center justify-center gap-4 text-zinc-400">
           <Camera size={20} />
