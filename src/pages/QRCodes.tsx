@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, QrCode, X, Share2, Calendar, User, CheckCircle, AlertCircle, Clock, Filter, Plus } from 'lucide-react';
+import { Search, QrCode, X, Share2, Calendar, User, CheckCircle, AlertCircle, Clock, Filter, Plus, Download, RefreshCw } from 'lucide-react';
 import { fetchCollection, createDocument, updateDocument, fetchDocument } from '../services/firestoreService';
 import { QRCodeData, Associado, ConfiguracaoExpiracao } from '../types';
 import { format, addDays, isAfter } from 'date-fns';
@@ -17,6 +17,7 @@ export default function QRCodes() {
   const [selectedAssociado, setSelectedAssociado] = useState<string>('');
   const [generatedQR, setGeneratedQR] = useState<string | null>(null);
   const [viewingQR, setViewingQR] = useState<QRCodeData | null>(null);
+  const [sharingId, setSharingId] = useState<string | null>(null);
   const { isAdmin, user } = useAuth();
 
   useEffect(() => {
@@ -68,13 +69,64 @@ export default function QRCodes() {
     }
   };
 
-  const handleShareWhatsApp = (qr: QRCodeData) => {
+  const handleShare = async (qr: QRCodeData) => {
+    if (sharingId) return;
+
     const assoc = associados.find(a => a.id === qr.associado_id);
     if (!assoc) return;
 
-    const message = encodeURIComponent(`Olá ${assoc.nome}, aqui está o seu QR Code para o corte de cabelo. Ele é válido até ${format(qr.expira_em.toDate(), 'dd/MM/yyyy')}. Apresente este código na barbearia conveniada.`);
+    setSharingId(qr.id);
+    const text = `Olá ${assoc.nome}, aqui está o seu QR Code para o corte de cabelo. Ele é válido até ${format(qr.expira_em.toDate(), 'dd/MM/yyyy')}. Apresente este código na barbearia conveniada.`;
+
+    try {
+      const dataUrl = await QRCode.toDataURL(qr.id, { width: 400, margin: 2 });
+      
+      // Try Web Share API first (best for mobile to include the image)
+      if (navigator.share && navigator.canShare) {
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        const file = new File([blob], `qrcode-${assoc.nome.replace(/\s+/g, '-')}.png`, { type: 'image/png' });
+
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'QR Code Barbearia',
+            text: text
+          });
+          setSharingId(null);
+          return;
+        }
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError' || err.message?.includes('canceled')) {
+        console.warn('Compartilhamento cancelado pelo usuário');
+      } else {
+        console.error('Erro ao compartilhar QR Code:', err);
+      }
+      
+      // If it failed/canceled, we don't return, so it falls back to WhatsApp link
+    } finally {
+      setSharingId(null);
+    }
+
+    // Fallback to WhatsApp link (Text only)
+    const message = encodeURIComponent(text);
     const url = `https://wa.me/${assoc.telefone.replace(/\D/g, '')}?text=${message}`;
     window.open(url, '_blank');
+  };
+
+  const handleDownload = async (qrId: string, name: string) => {
+    try {
+      const dataUrl = await QRCode.toDataURL(qrId, { width: 1000, margin: 2 });
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `qrcode-${name.replace(/\s+/g, '-')}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Erro ao baixar QR Code:', err);
+    }
   };
 
   const getStatusBadge = (status: string, expira_em: any) => {
@@ -177,11 +229,15 @@ export default function QRCodes() {
                             <Search size={18} />
                           </button>
                           <button 
-                            onClick={() => handleShareWhatsApp(qr)}
-                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                            title="Compartilhar WhatsApp"
+                            onClick={() => handleShare(qr)}
+                            disabled={sharingId === qr.id}
+                            className={cn(
+                              "p-2 rounded-lg transition-colors",
+                              sharingId === qr.id ? "text-zinc-300" : "text-green-600 hover:bg-green-50"
+                            )}
+                            title="Compartilhar"
                           >
-                            <Share2 size={18} />
+                            {sharingId === qr.id ? <RefreshCw className="animate-spin" size={18} /> : <Share2 size={18} />}
                           </button>
                         </div>
                       </td>
@@ -237,22 +293,35 @@ export default function QRCodes() {
                     <h4 className="font-bold text-zinc-900">QR Code Gerado com Sucesso!</h4>
                     <p className="text-sm text-zinc-500">O código já está ativo e pode ser compartilhado.</p>
                   </div>
-                  <div className="flex gap-3">
-                    <button 
-                      onClick={() => setIsModalOpen(false)}
-                      className="flex-1 py-3 border border-zinc-200 rounded-xl font-bold text-zinc-600"
-                    >
-                      Fechar
-                    </button>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => setIsModalOpen(false)}
+                        className="flex-1 py-3 border border-zinc-200 rounded-xl font-bold text-zinc-600"
+                      >
+                        Fechar
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const qr = qrcodes[0];
+                          if (qr) handleShare(qr);
+                        }}
+                        disabled={sharingId === qrcodes[0]?.id}
+                        className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {sharingId === qrcodes[0]?.id ? <RefreshCw className="animate-spin" size={18} /> : <Share2 size={18} />}
+                        Compartilhar
+                      </button>
+                    </div>
                     <button 
                       onClick={() => {
-                        const qr = qrcodes[0]; // The one we just created is first due to orderBy
-                        if (qr) handleShareWhatsApp(qr);
+                        const assoc = associados.find(a => a.id === selectedAssociado);
+                        handleDownload(qrcodes[0]?.id, assoc?.nome || 'associado');
                       }}
-                      className="flex-1 py-3 bg-green-600 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+                      className="w-full py-3 bg-zinc-100 text-zinc-900 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-200"
                     >
-                      <Share2 size={18} />
-                      WhatsApp
+                      <Download size={18} />
+                      Baixar Imagem
                     </button>
                   </div>
                 </div>
@@ -292,13 +361,26 @@ export default function QRCodes() {
                 </div>
               </div>
 
-              <button 
-                onClick={() => handleShareWhatsApp(viewingQR)}
-                className="w-full py-4 bg-green-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-100"
-              >
-                <Share2 size={20} />
-                Compartilhar no WhatsApp
-              </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button 
+                  onClick={() => handleShare(viewingQR)}
+                  disabled={sharingId === viewingQR.id}
+                  className="w-full py-4 bg-green-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-100 hover:bg-green-700 disabled:opacity-70 transition-all"
+                >
+                  {sharingId === viewingQR.id ? <RefreshCw className="animate-spin" size={20} /> : <Share2 size={20} />}
+                  Compartilhar
+                </button>
+                <button 
+                  onClick={() => {
+                    const assoc = associados.find(a => a.id === viewingQR.associado_id);
+                    handleDownload(viewingQR.id, assoc?.nome || 'associado');
+                  }}
+                  className="w-full py-4 bg-zinc-100 text-zinc-900 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-200 transition-colors"
+                >
+                  <Download size={20} />
+                  Baixar Imagem
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -314,4 +396,8 @@ function QRImage({ id }: { id: string }) {
     QRCode.toDataURL(id).then(setSrc);
   }, [id]);
   return src ? <img src={src} alt="QR" className="w-40 h-40" /> : <div className="w-40 h-40 animate-pulse bg-zinc-200 rounded-lg" />;
+}
+
+function cn(...inputs: any[]) {
+  return inputs.filter(Boolean).join(' ');
 }
