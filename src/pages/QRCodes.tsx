@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, QrCode, X, Share2, Calendar, User, CheckCircle, AlertCircle, Clock, Filter, Plus, Download, RefreshCw } from 'lucide-react';
+import { Search, QrCode, X, Share2, Calendar, User, CheckCircle, AlertCircle, Clock, Filter, Plus, Download, RefreshCw, Copy, Check } from 'lucide-react';
 import { fetchCollection, createDocument, updateDocument, fetchDocument } from '../services/firestoreService';
 import { QRCodeData, Associado, ConfiguracaoExpiracao } from '../types';
 import { format, addDays, isAfter } from 'date-fns';
@@ -18,6 +18,7 @@ export default function QRCodes() {
   const [generatedQR, setGeneratedQR] = useState<string | null>(null);
   const [viewingQR, setViewingQR] = useState<QRCodeData | null>(null);
   const [sharingId, setSharingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const { isAdmin, user } = useAuth();
 
   useEffect(() => {
@@ -113,6 +114,30 @@ export default function QRCodes() {
     const message = encodeURIComponent(text);
     const url = `https://wa.me/${assoc.telefone.replace(/\D/g, '')}?text=${message}`;
     window.open(url, '_blank');
+  };
+
+  const handleCopyImage = async (qrId: string) => {
+    try {
+      const dataUrl = await QRCode.toDataURL(qrId, { width: 1000, margin: 2 });
+      const response = await fetch(dataUrl);
+      const blob = await response.blob();
+      
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            [blob.type]: blob
+          })
+        ]);
+        setCopiedId(qrId);
+        setTimeout(() => setCopiedId(null), 2000);
+      } else {
+        throw new Error('Clipboard API not supported');
+      }
+    } catch (err) {
+      console.error('Erro ao copiar imagem:', err);
+      // Fallback: invite user to download instead or show message
+      alert('Seu navegador não suporta copiar imagens diretamente. Use o botão "Baixar Imagem".');
+    }
   };
 
   const handleDownload = async (qrId: string, name: string) => {
@@ -314,11 +339,27 @@ export default function QRCodes() {
                       </button>
                     </div>
                     <button 
+                      onClick={() => handleCopyImage(qrcodes[0]?.id)}
+                      className="w-full py-3 bg-zinc-100 text-zinc-900 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all border border-zinc-200"
+                    >
+                      {copiedId === qrcodes[0]?.id ? (
+                        <>
+                          <Check size={18} className="text-green-600" />
+                          <span className="text-green-600">Imagem Copiada!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={18} />
+                          Copiar para Área de Transferência
+                        </>
+                      )}
+                    </button>
+                    <button 
                       onClick={() => {
                         const assoc = associados.find(a => a.id === selectedAssociado);
                         handleDownload(qrcodes[0]?.id, assoc?.nome || 'associado');
                       }}
-                      className="w-full py-3 bg-zinc-100 text-zinc-900 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-200"
+                      className="w-full py-3 bg-zinc-50 text-zinc-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-100 transition-all"
                     >
                       <Download size={18} />
                       Baixar Imagem
@@ -361,25 +402,39 @@ export default function QRCodes() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <button 
                   onClick={() => handleShare(viewingQR)}
                   disabled={sharingId === viewingQR.id}
                   className="w-full py-4 bg-green-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-100 hover:bg-green-700 disabled:opacity-70 transition-all"
                 >
                   {sharingId === viewingQR.id ? <RefreshCw className="animate-spin" size={20} /> : <Share2 size={20} />}
-                  Compartilhar
+                  Compartilhar Direto
                 </button>
-                <button 
-                  onClick={() => {
-                    const assoc = associados.find(a => a.id === viewingQR.associado_id);
-                    handleDownload(viewingQR.id, assoc?.nome || 'associado');
-                  }}
-                  className="w-full py-4 bg-zinc-100 text-zinc-900 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-200 transition-colors"
-                >
-                  <Download size={20} />
-                  Baixar Imagem
-                </button>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={() => handleCopyImage(viewingQR.id)}
+                    className="py-3 bg-zinc-100 text-zinc-900 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all border border-zinc-200"
+                  >
+                    {copiedId === viewingQR.id ? (
+                      <Check size={18} className="text-green-600" />
+                    ) : (
+                      <Copy size={18} />
+                    )}
+                    {copiedId === viewingQR.id ? 'Copiado!' : 'Copiar'}
+                  </button>
+                  <button 
+                    onClick={() => {
+                      const assoc = associados.find(a => a.id === viewingQR.associado_id);
+                      handleDownload(viewingQR.id, assoc?.nome || 'associado');
+                    }}
+                    className="py-3 bg-zinc-50 text-zinc-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-zinc-100 transition-all"
+                  >
+                    <Download size={18} />
+                    Baixar
+                  </button>
+                </div>
               </div>
             </div>
           </div>
