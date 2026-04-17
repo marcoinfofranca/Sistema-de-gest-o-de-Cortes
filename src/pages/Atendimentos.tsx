@@ -19,6 +19,7 @@ export default function Atendimentos() {
   const [statusFilter, setStatusFilter] = useState('todos');
   const [startDate, setStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-01'));
   const [endDate, setEndDate] = useState(format(endOfDay(new Date()), 'yyyy-MM-dd'));
+  const [fornecedorFilter, setFornecedorFilter] = useState('todos');
   const { isAdmin, isBarbeiro, profile } = useAuth();
   const [userFornecedorId, setUserFornecedorId] = useState<string | null>(null);
 
@@ -57,6 +58,7 @@ export default function Atendimentos() {
     const assoc = associados.find(a => a.id === at.associado_id);
     const matchesSearch = assoc?.nome.toLowerCase().includes(searchTerm.toLowerCase()) || false;
     const matchesStatus = statusFilter === 'todos' || at.status_pagamento === statusFilter;
+    const matchesFornecedor = !isAdmin || fornecedorFilter === 'todos' || at.fornecedor_id === fornecedorFilter;
     
     // Date filter
     const atDate = at.data_hora.toDate();
@@ -64,7 +66,7 @@ export default function Atendimentos() {
     const end = endOfDay(new Date(endDate + 'T23:59:59'));
     const matchesDate = isWithinInterval(atDate, { start, end });
 
-    return matchesSearch && matchesStatus && matchesDate;
+    return matchesSearch && matchesStatus && matchesDate && matchesFornecedor;
   });
 
   const exportExcel = () => {
@@ -156,9 +158,9 @@ export default function Atendimentos() {
         </div>
       </header>
 
-      {/* Date Filters */}
+      {/* Filters */}
       <div className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className={cn("grid grid-cols-1 gap-6", isAdmin ? "md:grid-cols-4" : "md:grid-cols-3")}>
           <div className="space-y-2">
             <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Data Início</label>
             <div className="relative">
@@ -183,6 +185,26 @@ export default function Atendimentos() {
               />
             </div>
           </div>
+          
+          {isAdmin && (
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Fornecedor</label>
+              <div className="relative">
+                <Scissors className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                <select 
+                  value={fornecedorFilter}
+                  onChange={(e) => setFornecedorFilter(e.target.value)}
+                  className="w-full pl-12 pr-4 py-2.5 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900 transition-all text-sm font-medium appearance-none"
+                >
+                  <option value="todos">Todos Fornecedores</option>
+                  {fornecedores.map(f => (
+                    <option key={f.id} value={f.id}>{f.nome}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Status Pagamento</label>
             <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl">
@@ -282,17 +304,15 @@ export default function Atendimentos() {
                 })
               )}
             </tbody>
-            {!loading && filteredAtendimentos.length > 0 && (
-              <tfoot className="bg-zinc-50/50 font-bold">
-                <tr>
-                  <td colSpan={isAdmin ? 3 : 2} className="px-6 py-4 text-right text-zinc-500 uppercase tracking-wider text-xs">Total do Período</td>
-                  <td className="px-6 py-4 text-zinc-900">
-                    R$ {filteredAtendimentos.reduce((acc, curr) => acc + curr.valor_aplicado, 0).toFixed(2)}
-                  </td>
-                  <td className="px-6 py-4"></td>
-                </tr>
-              </tfoot>
-            )}
+            <tfoot className="bg-zinc-50 font-bold border-t border-zinc-200">
+              <tr>
+                <td colSpan={isAdmin ? 3 : 2} className="px-6 py-4 text-sm font-bold text-zinc-900 text-right uppercase">Total do Período:</td>
+                <td className="px-6 py-4 font-bold text-zinc-900">
+                  R$ {filteredAtendimentos.reduce((sum, at) => sum + at.valor_aplicado, 0).toFixed(2)}
+                </td>
+                <td className="px-6 py-4"></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
