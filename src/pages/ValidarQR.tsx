@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
-import { Search, CheckCircle, XCircle, User, Calendar, Scissors, AlertCircle, Camera, Upload } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { Search, CheckCircle, XCircle, User, Calendar, Scissors, AlertCircle, Camera, Upload, RefreshCw } from 'lucide-react';
 import { fetchDocument, updateDocument, createDocument, fetchCollection } from '../services/firestoreService';
 import { QRCodeData, Associado, Fornecedor, ConfiguracaoValor } from '../types';
 import { format, isAfter } from 'date-fns';
@@ -16,28 +16,80 @@ export default function ValidarQR() {
   const [error, setError] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
   const { user, profile } = useAuth();
+  
+  const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  const isScanningRef = useRef(false);
 
   useEffect(() => {
-    const scanner = new Html5QrcodeScanner('reader', {
-      fps: 10,
-      qrbox: { width: 250, height: 250 },
-    }, false);
-
-    scanner.render(onScanSuccess, onScanError);
+    html5QrCodeRef.current = new Html5Qrcode('reader');
+    startScanner();
 
     return () => {
-      scanner.clear().catch(err => console.error('Failed to clear scanner', err));
+      stopScanner();
     };
   }, []);
 
-  const onScanSuccess = (decodedText: string) => {
+  const startScanner = async () => {
+    if (!html5QrCodeRef.current) return;
+    
+    try {
+      setCameraActive(true);
+      setError(null);
+      isScanningRef.current = true;
+      
+      await html5QrCodeRef.current.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+        },
+        onScanSuccess,
+        onScanError
+      );
+    } catch (err) {
+      console.error("Erro ao iniciar câmera:", err);
+      setError("Não foi possível acessar a câmera. Verifique as permissões.");
+      setCameraActive(false);
+      isScanningRef.current = false;
+    }
+  };
+
+  const stopScanner = async () => {
+    if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+      try {
+        await html5QrCodeRef.current.stop();
+        isScanningRef.current = false;
+        setCameraActive(false);
+      } catch (err) {
+        console.error("Erro ao parar câmera:", err);
+      }
+    }
+  };
+
+  const onScanSuccess = async (decodedText: string) => {
+    if (!isScanningRef.current) return;
+    
+    // Stop scanning immediately to prevent multiple triggers
+    isScanningRef.current = false;
+    await stopScanner();
+    
     setScanResult(decodedText);
     validateQR(decodedText);
   };
 
   const onScanError = (err: any) => {
-    // console.warn(err);
+    // Optional: Log only critical errors
+  };
+
+  const resetScanner = async () => {
+    setScanResult(null);
+    setQrData(null);
+    setAssociado(null);
+    setError(null);
+    setSuccess(false);
+    await startScanner();
   };
 
   const validateQR = async (id: string) => {
@@ -132,15 +184,23 @@ export default function ValidarQR() {
         <p className="text-zinc-500">Aponte a câmera para o QR Code do associado.</p>
       </header>
 
-      {!scanResult && !success && (
-        <div className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
-          <div id="reader" className="overflow-hidden rounded-2xl border-none"></div>
-          <div className="mt-6 flex items-center justify-center gap-4 text-zinc-400">
-            <Camera size={20} />
-            <span className="text-sm font-medium">Scanner ativo...</span>
-          </div>
+      <div className={cn(
+        "bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm overflow-hidden",
+        (scanResult || success || validating) ? "hidden" : "block"
+      )}>
+        <div id="reader" className="overflow-hidden rounded-2xl border-none aspect-square bg-zinc-50 flex items-center justify-center">
+          {!cameraActive && !error && (
+            <div className="text-center space-y-4">
+              <RefreshCw className="animate-spin text-zinc-400 mx-auto" size={32} />
+              <p className="text-zinc-500 font-medium">Iniciando câmera...</p>
+            </div>
+          )}
         </div>
-      )}
+        <div className="mt-6 flex items-center justify-center gap-4 text-zinc-400">
+          <Camera size={20} />
+          <span className="text-sm font-medium">Scanner ativo...</span>
+        </div>
+      </div>
 
       {validating && (
         <div className="bg-white p-10 rounded-3xl border border-zinc-200 shadow-sm text-center space-y-4">
@@ -149,7 +209,25 @@ export default function ValidarQR() {
         </div>
       )}
 
-      {error && (
+      {error && !scanResult && !cameraActive && (
+        <div className="bg-red-50 p-8 rounded-3xl border border-red-100 text-center space-y-4">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+            <XCircle size={32} />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-red-900">Erro de Câmera</h3>
+            <p className="text-red-600 font-medium">{error}</p>
+          </div>
+          <button 
+            onClick={startScanner}
+            className="px-8 py-3 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-colors"
+          >
+            Tentar Novamente
+          </button>
+        </div>
+      )}
+
+      {error && scanResult && (
         <div className="bg-red-50 p-8 rounded-3xl border border-red-100 text-center space-y-4">
           <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
             <XCircle size={32} />
@@ -159,10 +237,10 @@ export default function ValidarQR() {
             <p className="text-red-600 font-medium">{error}</p>
           </div>
           <button 
-            onClick={() => { setScanResult(null); setError(null); }}
+            onClick={resetScanner}
             className="px-8 py-3 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-colors"
           >
-            Tentar Novamente
+            Validar Outro
           </button>
         </div>
       )}
@@ -204,7 +282,7 @@ export default function ValidarQR() {
 
             <div className="pt-4 flex gap-4">
               <button 
-                onClick={() => { setScanResult(null); setQrData(null); }}
+                onClick={resetScanner}
                 className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold text-zinc-600 hover:bg-zinc-50 transition-colors"
               >
                 Cancelar
@@ -230,7 +308,7 @@ export default function ValidarQR() {
             <p className="text-zinc-500 mt-2">O corte foi registrado com sucesso e o QR Code foi baixado.</p>
           </div>
           <button 
-            onClick={() => { setScanResult(null); setSuccess(false); setQrData(null); setAssociado(null); }}
+            onClick={resetScanner}
             className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all"
           >
             Validar Outro Código
