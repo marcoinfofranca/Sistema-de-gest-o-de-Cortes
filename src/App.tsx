@@ -18,7 +18,7 @@ import Atendimentos from './pages/Atendimentos';
 import Pagamentos from './pages/Pagamentos';
 import Configuracoes from './pages/Configuracoes';
 import { fetchCollection } from './services/firestoreService';
-import { Atendimento, Associado, QRCodeData } from './types';
+import { Atendimento, Associado, QRCodeData, Fornecedor } from './types';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -86,7 +86,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
     { to: '/fornecedores', icon: Scissors, label: 'Fornecedores', show: isAdmin },
     { to: '/qrcodes', icon: QrCode, label: 'QR Codes', show: isAdmin },
     { to: '/validar', icon: Search, label: 'Validar QR', show: isBarbeiro || isAdmin },
-    { to: '/atendimentos', icon: FileText, label: 'Atendimentos', show: isAdmin },
+    { to: '/atendimentos', icon: FileText, label: 'Relatórios', show: isAdmin || isBarbeiro },
     { to: '/pagamentos', icon: CreditCard, label: 'Pagamentos', show: isAdmin },
     { to: '/configuracoes', icon: Settings, label: 'Configurações', show: isAdmin },
   ].filter(item => item.show);
@@ -272,7 +272,7 @@ const Login = () => {
 };
 
 const Dashboard = () => {
-  const { profile, isAdmin, user } = useAuth();
+  const { profile, isAdmin, isBarbeiro, user } = useAuth();
   const [stats, setStats] = useState({
     associados: 0,
     cortesMes: 0,
@@ -286,7 +286,21 @@ const Dashboard = () => {
       try {
         const associados = await fetchCollection('associados') as Associado[];
         const qrcodes = await fetchCollection('qrcodes', [where('status', '==', 'ativo')]) as QRCodeData[];
-        const atendimentos = await fetchCollection('atendimentos') as Atendimento[];
+        
+        let atendimentosConstraints: any[] = [];
+        if (isBarbeiro && profile) {
+          const fornecedores = await fetchCollection('fornecedores') as Fornecedor[];
+          const myFornecedor = fornecedores.find(f => f.usuario_id === profile.id);
+          if (myFornecedor) {
+            atendimentosConstraints.push(where('fornecedor_id', '==', myFornecedor.id));
+          } else {
+            // Barber but no provider linked yet
+            setLoading(false);
+            return;
+          }
+        }
+        
+        const atendimentos = await fetchCollection('atendimentos', atendimentosConstraints) as Atendimento[];
         
         // Filter atendimentos for current month
         const now = new Date();
@@ -312,7 +326,7 @@ const Dashboard = () => {
     };
 
     loadStats();
-  }, []);
+  }, [profile, isBarbeiro]);
 
   return (
     <div>
@@ -334,7 +348,9 @@ const Dashboard = () => {
           <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center mb-4">
             <CheckCircle size={24} />
           </div>
-          <p className="text-zinc-500 text-sm font-medium mb-1">Cortes Realizados (Mês)</p>
+          <p className="text-zinc-500 text-sm font-medium mb-1">
+            {isBarbeiro ? 'Meus Cortes (Mês)' : 'Cortes Realizados (Mês)'}
+          </p>
           <h3 className="text-2xl font-bold text-zinc-900">{loading ? '...' : stats.cortesMes}</h3>
         </div>
         <div className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm">
@@ -348,7 +364,9 @@ const Dashboard = () => {
           <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-4">
             <CreditCard size={24} />
           </div>
-          <p className="text-zinc-500 text-sm font-medium mb-1">Pendente Pagamento</p>
+          <p className="text-zinc-500 text-sm font-medium mb-1">
+            {isBarbeiro ? 'Créditos a Receber' : 'Pendente Pagamento'}
+          </p>
           <h3 className="text-2xl font-bold text-zinc-900">{loading ? '...' : `R$ ${stats.pendentePagamento.toFixed(2)}`}</h3>
         </div>
       </div>
@@ -472,7 +490,7 @@ export default function App() {
             isAdmin ? <Layout><QRCodes /></Layout> : <Navigate to="/dashboard" />
           } />
           <Route path="/atendimentos" element={
-            isAdmin ? <Layout><Atendimentos /></Layout> : <Navigate to="/dashboard" />
+            (isAdmin || isBarbeiro) ? <Layout><Atendimentos /></Layout> : <Navigate to="/dashboard" />
           } />
           <Route path="/pagamentos" element={
             isAdmin ? <Layout><Pagamentos /></Layout> : <Navigate to="/dashboard" />
