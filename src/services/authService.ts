@@ -21,12 +21,14 @@ export const loginWithGoogle = async () => {
     
     if (!profile) {
       // Create default profile (first user as admin if email matches, else barbeiro)
-      const isAdmin = user.email === "marcoinfofranca@gmail.com";
+      const adminEmails = ["marcoinfofranca@gmail.com"]; // Adicione mais e-mails aqui
+      const isInitialAdmin = user.email && adminEmails.includes(user.email);
+      
       profile = {
         id: user.uid,
         nome: user.displayName || 'Usuário',
         email: user.email || '',
-        perfil: isAdmin ? 'admin' : 'barbeiro',
+        perfil: isInitialAdmin ? 'admin' : 'barbeiro',
         ativo: true,
         criado_em: new Date()
       };

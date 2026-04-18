@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, DollarSign, Calendar, Clock, Save, History, Plus, X, AlertCircle } from 'lucide-react';
+import { Settings, DollarSign, Calendar, Clock, Save, History, Plus, X, AlertCircle, Shield, ShieldAlert, User as UserIcon } from 'lucide-react';
 import { fetchCollection, createDocument, updateDocument } from '../services/firestoreService';
-import { ConfiguracaoValor, ConfiguracaoExpiracao } from '../types';
+import { ConfiguracaoValor, ConfiguracaoExpiracao, UserProfile } from '../types';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from '../App';
@@ -10,6 +10,7 @@ import { orderBy, Timestamp } from 'firebase/firestore';
 export default function Configuracoes() {
   const [valorConfigs, setValorConfigs] = useState<ConfiguracaoValor[]>([]);
   const [expiracaoConfigs, setExpiracaoConfigs] = useState<ConfiguracaoExpiracao[]>([]);
+  const [usuarios, setUsuarios] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
 
@@ -26,8 +27,10 @@ export default function Configuracoes() {
     try {
       const vData = await fetchCollection('configuracoes_valor', [orderBy('data_inicio', 'desc')]) as ConfiguracaoValor[];
       const eData = await fetchCollection('configuracoes_expiracao', [orderBy('data_inicio', 'desc')]) as ConfiguracaoExpiracao[];
+      const uData = await fetchCollection('users') as UserProfile[];
       setValorConfigs(vData);
       setExpiracaoConfigs(eData);
+      setUsuarios(uData);
     } catch (error) {
       console.error(error);
     } finally {
@@ -64,6 +67,19 @@ export default function Configuracoes() {
       loadConfigs();
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  const handleToggleAdmin = async (u: UserProfile) => {
+    const newProfile = u.perfil === 'admin' ? 'barbeiro' : 'admin';
+    if (!window.confirm(`Deseja alterar o perfil de ${u.nome} para ${newProfile}?`)) return;
+    
+    try {
+      await updateDocument('users', u.id, { perfil: newProfile });
+      setUsuarios(usuarios.map(usr => usr.id === u.id ? { ...usr, perfil: newProfile } : usr));
+    } catch (error) {
+      console.error('Erro ao atualizar perfil:', error);
+      alert('Erro ao atualizar perfil.');
     }
   };
 
@@ -214,6 +230,75 @@ export default function Configuracoes() {
           </div>
         </section>
       </div>
+
+      <section className="space-y-6">
+        <div className="bg-white p-8 rounded-3xl border border-zinc-200 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+              <Shield size={20} />
+            </div>
+            <h3 className="text-xl font-bold text-zinc-900">Gerenciamento de Usuários</h3>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-zinc-50/50">
+                  <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Usuário</th>
+                  <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Email</th>
+                  <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Perfil Atual</th>
+                  <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">Ação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {usuarios.map((u) => (
+                  <tr key={u.id} className="hover:bg-zinc-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 text-xs font-bold">
+                          {u.nome.charAt(0)}
+                        </div>
+                        <p className="font-bold text-zinc-900">{u.nome}</p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-zinc-600 font-medium">{u.email}</td>
+                    <td className="px-6 py-4">
+                      <span className={cn(
+                        "px-3 py-1 rounded-full text-xs font-bold capitalize",
+                        u.perfil === 'admin' ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-600"
+                      )}>
+                        {u.perfil}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      {u.id !== user?.uid ? (
+                        <button 
+                          onClick={() => handleToggleAdmin(u)}
+                          className={cn(
+                            "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                            u.perfil === 'admin' 
+                              ? "text-red-600 hover:bg-red-50" 
+                              : "text-blue-600 hover:bg-blue-50"
+                          )}
+                        >
+                          {u.perfil === 'admin' ? <ShieldAlert size={16} /> : <Shield size={16} />}
+                          {u.perfil === 'admin' ? "Remover Admin" : "Tornar Admin"}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-zinc-400 font-medium italic">Você</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </div>
   );
+}
+
+function cn(...inputs: any[]) {
+  return inputs.filter(Boolean).join(' ');
 }
