@@ -71,9 +71,13 @@ export default function ValidarQR() {
         onScanSuccess,
         onScanError
       );
-    } catch (err) {
+    } catch (err: any) {
       console.error("Erro ao iniciar câmera:", err);
-      setError("Não foi possível acessar a câmera. Verifique as permissões.");
+      if (err?.toString().includes("NotAllowedError") || err?.toString().includes("Permission dismissed")) {
+        setError("O acesso à câmera foi negado. Para validar o código, clique no ícone de cadeado na barra de endereços do seu navegador e permita o uso da câmera.");
+      } else {
+        setError("Não foi possível acessar a câmera. Verifique se outra aba está usando a câmera ou se o seu dispositivo bloqueou o acesso.");
+      }
       setCameraActive(false);
       isScanningRef.current = false;
     }
@@ -158,7 +162,8 @@ export default function ValidarQR() {
         
         // Fallback: If not found by UID, try by email
         if (fData.length === 0 && user?.email) {
-          fData = await fetchCollection('fornecedores', [where('email', '==', user.email)]) as Fornecedor[];
+          const emailLower = user.email.toLowerCase().trim();
+          fData = await fetchCollection('fornecedores', [where('email', '==', emailLower)]) as Fornecedor[];
           
           // If found by email, update the record with the UID for future logins
           if (fData.length > 0 && user.uid) {
@@ -167,13 +172,18 @@ export default function ValidarQR() {
         }
 
         if (fData.length === 0) {
-          setError('Você não está cadastrado como fornecedor ativo. Certifique-se que o administrador cadastrou seu e-mail corretamente.');
+          setError(`Você não está vinculado a um fornecedor ativo. Verifique se o e-mail "${user?.email}" foi cadastrado corretamente pelo administrador na lista de Fornecedores.`);
           return;
         }
         setFornecedor(fData[0]);
-      } else if (isAdmin && allFornecedores.length > 0) {
-        // Default to first one if admin is testing, but let them change
-        setFornecedor(allFornecedores[0]);
+      } else if (isAdmin) {
+        if (allFornecedores.length > 0) {
+          // Default to first one if admin is testing, but let them change
+          setFornecedor(allFornecedores[0]);
+        } else {
+          setError('Não há fornecedores ativos cadastrados no sistema. Cadastre pelo menos uma barbearia para validar atendimentos.');
+          return;
+        }
       }
 
     } catch (err) {
@@ -255,7 +265,8 @@ export default function ValidarQR() {
           </div>
           <div>
             <h3 className="text-xl font-bold text-red-900">Erro de Câmera</h3>
-            <p className="text-red-600 font-medium">{error}</p>
+            <p className="text-red-600 font-medium whitespace-pre-line">{error}</p>
+            <p className="mt-4 text-sm text-red-500 italic">Dica: Se estiver usando o celular, tente abrir a aplicação em uma nova aba do navegador para facilitar o acesso à câmera.</p>
           </div>
           <button 
             onClick={startScanner}

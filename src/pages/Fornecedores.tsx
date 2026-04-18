@@ -45,16 +45,21 @@ export default function Fornecedores() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const dataToSave = {
+      ...formData,
+      email: formData.email.toLowerCase().trim()
+    };
+
     try {
       if (editingFornecedor) {
-        await updateDocument('fornecedores', editingFornecedor.id, formData);
+        await updateDocument('fornecedores', editingFornecedor.id, dataToSave);
       } else {
         // Try to find if a user with this email already exists to link immediately
         const { where } = await import('firebase/firestore');
         let usuario_id = 'pending';
         
         try {
-          const users = await fetchCollection('users', [where('email', '==', formData.email)]) as any[];
+          const users = await fetchCollection('users', [where('email', '==', dataToSave.email)]) as any[];
           if (users.length > 0) {
             usuario_id = users[0].id;
           }
@@ -63,7 +68,7 @@ export default function Fornecedores() {
         }
 
         await createDocument('fornecedores', {
-          ...formData,
+          ...dataToSave,
           usuario_id
         });
       }

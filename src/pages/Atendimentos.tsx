@@ -39,7 +39,8 @@ export default function Atendimentos() {
         let myFornecedor = foData.find(f => f.usuario_id === profile.id);
         
         if (!myFornecedor && profile.email) {
-          myFornecedor = foData.find(f => f.email === profile.email);
+          const emailLower = profile.email.toLowerCase();
+          myFornecedor = foData.find(f => f.email === emailLower);
         }
 
         if (myFornecedor) {

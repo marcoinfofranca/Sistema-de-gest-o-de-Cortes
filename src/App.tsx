@@ -293,7 +293,8 @@ const Dashboard = () => {
           let myFornecedor = fornecedores.find(f => f.usuario_id === profile.id);
           
           if (!myFornecedor && profile.email) {
-            myFornecedor = fornecedores.find(f => f.email === profile.email);
+            const emailLower = profile.email.toLowerCase();
+            myFornecedor = fornecedores.find(f => f.email === emailLower);
           }
 
           if (myFornecedor) {
