@@ -21,7 +21,8 @@ export default function ValidarQR() {
   const { user, profile, isAdmin, isBarbeiro } = useAuth();
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
-  const isScanningRef = useRef(false);
+  // CORREÇÃO 4: isScanningRef starts true for first scan
+  const isScanningRef = useRef(true);
 
   useEffect(() => {
     // Load all fornecedores if admin
@@ -31,16 +32,14 @@ export default function ValidarQR() {
       });
     }
 
-    // Add a slight delay to ensure the container is fully rendered
-    const timer = setTimeout(() => {
-      if (!html5QrCodeRef.current) {
-        html5QrCodeRef.current = new Html5Qrcode('reader');
-      }
-      startScanner();
-    }, 500);
+    // CORREÇÃO 3: verify if #reader exists
+    const el = document.getElementById('reader');
+    if (el && !html5QrCodeRef.current) {
+      html5QrCodeRef.current = new Html5Qrcode('reader');
+    }
+    startScanner();
 
     return () => {
-      clearTimeout(timer);
       stopScanner();
     };
   }, []);
@@ -49,10 +48,12 @@ export default function ValidarQR() {
     if (!html5QrCodeRef.current) return;
     if (html5QrCodeRef.current.isScanning) return;
     
+    // CORREÇÃO 4: Reset isScanningRef to true
+    isScanningRef.current = true;
+    
     try {
       setCameraActive(true);
       setError(null);
-      isScanningRef.current = true;
       
       await html5QrCodeRef.current.start(
         { facingMode: "environment" },
@@ -110,13 +111,16 @@ export default function ValidarQR() {
     // Optional: Log only critical errors
   };
 
+  // CORREÇÃO 2: resetScanner waits for stop and adds delay
   const resetScanner = async () => {
     setScanResult(null);
     setQrData(null);
     setAssociado(null);
+    setFornecedor(null); // Reset detected fornecedor
     setError(null);
     setSuccess(false);
-    await startScanner();
+    await stopScanner();
+    setTimeout(() => startScanner(), 300);
   };
 
   const validateQR = async (id: string) => {
@@ -269,9 +273,10 @@ export default function ValidarQR() {
         <p className="text-zinc-500">Aponte a câmera para o QR Code do associado.</p>
       </header>
 
+      {/* CORREÇÃO 5: hide camera when there's an error */}
       <div className={cn(
         "bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm overflow-hidden",
-        (scanResult || success || validating) ? "hidden" : "block"
+        (scanResult || success || validating || !!error) ? "hidden" : "block"
       )}>
         <div className="relative overflow-hidden rounded-2xl bg-zinc-50 aspect-square">
           {!cameraActive && !error && (
@@ -332,8 +337,9 @@ export default function ValidarQR() {
         </div>
       )}
 
+      {/* CORREÇÃO 1: removed animation classes */}
       {qrData && associado && !success && !validating && (
-        <div className="bg-white rounded-3xl border border-zinc-200 shadow-xl overflow-hidden animate-in fade-in zoom-in duration-300">
+        <div className="bg-white rounded-3xl border border-zinc-200 shadow-xl overflow-hidden">
           <div className="bg-green-50 p-6 flex items-center gap-4 border-b border-green-100">
             <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
               <CheckCircle size={24} />
@@ -413,8 +419,9 @@ export default function ValidarQR() {
         </div>
       )}
 
+      {/* CORREÇÃO 1: removed animation classes */}
       {success && (
-        <div className="bg-white p-10 rounded-3xl border border-zinc-200 shadow-xl text-center space-y-6 animate-in fade-in zoom-in duration-300">
+        <div className="bg-white p-10 rounded-3xl border border-zinc-200 shadow-xl text-center space-y-6">
           <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto">
             <CheckCircle size={40} />
           </div>
