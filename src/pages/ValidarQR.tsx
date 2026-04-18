@@ -123,26 +123,32 @@ export default function ValidarQR() {
     setValidating(true);
     setError(null);
     setSuccess(false);
-    setQrData(null);
-    setAssociado(null);
+    // Don't clear these yet, wait for results
+    // setQrData(null);
+    // setAssociado(null);
 
     try {
       // 1. Fetch QR Data
       const qr = await fetchDocument('qrcodes', id) as QRCodeData | null;
       if (!qr) {
+        setQrData(null);
+        setAssociado(null);
         setError('QR Code inválido ou não encontrado.');
         return;
       }
-      setQrData(qr);
 
       // 2. Check Status
       if (qr.status !== 'ativo') {
+        setQrData(null);
+        setAssociado(null);
         setError(`Este QR Code já foi ${qr.status}.`);
         return;
       }
 
       // 3. Check Expiration
       if (isAfter(new Date(), qr.expira_em.toDate())) {
+        setQrData(null);
+        setAssociado(null);
         setError('Este QR Code está expirado.');
         return;
       }
@@ -150,45 +156,76 @@ export default function ValidarQR() {
       // 4. Fetch Associado
       const assoc = await fetchDocument('associados', qr.associado_id) as Associado | null;
       if (!assoc || !assoc.ativo) {
-        setError('Associado inativo ou não encontrado.');
+        setQrData(null);
+        setAssociado(null);
+        setError('Associado vinculado a este QR Code não foi encontrado ou está inativo.');
         return;
       }
-      setAssociado(assoc);
 
-      // 5. Fetch Fornecedor (if current user is a barbeiro)
+      // 5. Fetch Fornecedor (Important step)
+      let detectedFornecedor: Fornecedor | null = null;
+
       if (isBarbeiro) {
-        let constraints = [where('usuario_id', '==', user?.uid)];
-        let fData = await fetchCollection('fornecedores', constraints) as Fornecedor[];
+        // Try exactly by UID first
+        let fData = await fetchCollection('fornecedores', [where('usuario_id', '==', user?.uid)]) as Fornecedor[];
         
-        // Fallback: If not found by UID, try by email
+        // Fallback: Try by Email (case-insensitive in JS)
         if (fData.length === 0 && user?.email) {
           const emailLower = user.email.toLowerCase().trim();
-          fData = await fetchCollection('fornecedores', [where('email', '==', emailLower)]) as Fornecedor[];
+          // Fetch all active to be safe and filter in JS
+          const allActive = await fetchCollection('fornecedores', [where('ativo', '==', true)]) as Fornecedor[];
+          const found = allActive.find(f => f.email.toLowerCase().trim() === emailLower);
           
-          // If found by email, update the record with the UID for future logins
-          if (fData.length > 0 && user.uid) {
-            await updateDocument('fornecedores', fData[0].id, { usuario_id: user.uid });
+          if (found) {
+            fData = [found];
+            // Auto-link UID
+            if (user.uid) {
+              await updateDocument('fornecedores', found.id, { usuario_id: user.uid });
+            }
           }
         }
 
         if (fData.length === 0) {
-          setError(`Você não está vinculado a um fornecedor ativo. Verifique se o e-mail "${user?.email}" foi cadastrado corretamente pelo administrador na lista de Fornecedores.`);
+          setQrData(null);
+          setAssociado(null);
+          setError(`Seu usuário (${user?.email}) não está vinculado a nenhuma barbearia ativa. Peça ao administrador para conferir seu e-mail no cadastro de Fornecedores.`);
           return;
         }
-        setFornecedor(fData[0]);
+        detectedFornecedor = fData[0];
       } else if (isAdmin) {
-        if (allFornecedores.length > 0) {
-          // Default to first one if admin is testing, but let them change
-          setFornecedor(allFornecedores[0]);
+        // Load in-place if not yet loaded
+        let list = allFornecedores;
+        if (list.length === 0) {
+          list = await fetchCollection('fornecedores', [where('ativo', '==', true), orderBy('nome', 'asc')]) as Fornecedor[];
+          setAllFornecedores(list);
+        }
+
+        if (list.length > 0) {
+          detectedFornecedor = list[0];
         } else {
-          setError('Não há fornecedores ativos cadastrados no sistema. Cadastre pelo menos uma barbearia para validar atendimentos.');
+          setQrData(null);
+          setAssociado(null);
+          setError('Nenhuma barbearia ativa encontrada no sistema. Cadastre um Fornecedor antes de validar atendimentos.');
           return;
         }
       }
 
+      // 6. Final success state update
+      if (detectedFornecedor) {
+        setQrData(qr);
+        setAssociado(assoc);
+        setFornecedor(detectedFornecedor);
+      } else {
+        setQrData(null);
+        setAssociado(null);
+        setError('Não foi possível identificar seu nível de acesso para vincular este atendimento. Tente sair e entrar novamente no sistema.');
+      }
+
     } catch (err) {
       console.error(err);
-      setError('Erro ao validar QR Code.');
+      setQrData(null);
+      setAssociado(null);
+      setError('Ocorreu um erro técnico ao processar a validação. Tente atualizar a página.');
     } finally {
       setValidating(false);
     }
