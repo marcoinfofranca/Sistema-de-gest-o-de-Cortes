@@ -1,330 +1,402 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Filter, Download, FileText, User, Scissors, Calendar, DollarSign, CheckCircle, Clock, FileDown } from 'lucide-react';
-import { fetchCollection } from '../services/firestoreService';
-import { Atendimento, Associado, Fornecedor } from '../types';
-import { format, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import React, { useState, useEffect, useRef } from 'react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { CheckCircle, XCircle, User, Scissors, Camera, RefreshCw } from 'lucide-react';
+import { fetchDocument, updateDocument, createDocument, fetchCollection } from '../services/firestoreService';
+import { QRCodeData, Associado, Fornecedor, ConfiguracaoValor } from '../types';
+import { format, isAfter } from 'date-fns';
 import { useAuth } from '../App';
-import { orderBy, where, Timestamp } from 'firebase/firestore';
-import * as XLSX from 'xlsx';
-import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import { orderBy, limit, where, Timestamp } from 'firebase/firestore';
 
-export default function Atendimentos() {
-  const [atendimentos, setAtendimentos] = useState<Atendimento[]>([]);
-  const [associados, setAssociados] = useState<Associado[]>([]);
-  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('todos');
-  const [startDate, setStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-01'));
-  const [endDate, setEndDate] = useState(format(endOfDay(new Date()), 'yyyy-MM-dd'));
-  const [fornecedorFilter, setFornecedorFilter] = useState('todos');
-  const { isAdmin, isBarbeiro, profile } = useAuth();
-  const [userFornecedorId, setUserFornecedorId] = useState<string | null>(null);
+export default function ValidarQR() {
+  const [scanResult, setScanResult] = useState<string | null>(null);
+  const [qrData, setQrData] = useState<QRCodeData | null>(null);
+  const [associado, setAssociado] = useState<Associado | null>(null);
+  const [fornecedor, setFornecedor] = useState<Fornecedor | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [allFornecedores, setAllFornecedores] = useState<Fornecedor[]>([]);
+  const { user, profile, isAdmin, isBarbeiro } = useAuth();
+
+  const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  // CORREÇÃO 4: isScanningRef começa true para o primeiro scan funcionar
+  const isScanningRef = useRef(true);
 
   useEffect(() => {
-    loadData();
-  }, [isAdmin, isBarbeiro, profile]);
+    if (isAdmin) {
+      fetchCollection('fornecedores', [where('ativo', '==', true), orderBy('nome', 'asc')]).then(data => {
+        setAllFornecedores(data as Fornecedor[]);
+      });
+    }
 
-  const loadData = async () => {
-    setLoading(true);
+    // CORREÇÃO 3: verificar se o elemento #reader existe antes de instanciar
+    const el = document.getElementById('reader');
+    if (el && !html5QrCodeRef.current) {
+      html5QrCodeRef.current = new Html5Qrcode('reader');
+    }
+    startScanner();
+
+    return () => {
+      stopScanner();
+    };
+  }, []);
+
+  const startScanner = async () => {
+    if (!html5QrCodeRef.current) return;
+    if (html5QrCodeRef.current.isScanning) return;
+
+    // CORREÇÃO 4: resetar isScanningRef para true ao (re)iniciar
+    isScanningRef.current = true;
+
     try {
-      const foData = await fetchCollection('fornecedores') as Fornecedor[];
-      setFornecedores(foData);
+      setCameraActive(true);
+      setError(null);
 
-      let constraints: any[] = [];
-      
-      if (isBarbeiro && profile) {
-        let myFornecedor = foData.find(f => f.usuario_id === profile.id);
-        
-        if (!myFornecedor && profile.email) {
-          const emailLower = profile.email.toLowerCase();
-          myFornecedor = foData.find(f => f.email === emailLower);
-        }
-
-        if (myFornecedor) {
-          constraints.push(where('fornecedor_id', '==', myFornecedor.id));
-          setUserFornecedorId(myFornecedor.id);
-        }
+      await html5QrCodeRef.current.start(
+        { facingMode: "environment" },
+        {
+          fps: 15,
+          qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
+            const qrboxSize = Math.floor(minEdgeSize * 0.7);
+            return { width: qrboxSize, height: qrboxSize };
+          },
+          aspectRatio: 1.0
+        },
+        onScanSuccess,
+        () => {} // onScanError silencioso — erros de parse são normais
+      );
+    } catch (err: any) {
+      console.error("Erro ao iniciar câmera:", err);
+      if (err?.toString().includes("NotAllowedError") || err?.toString().includes("Permission dismissed")) {
+        setError("O acesso à câmera foi negado. Clique no ícone de cadeado na barra de endereços e permita o uso da câmera.");
+      } else {
+        setError("Não foi possível acessar a câmera. Verifique se outra aba está usando a câmera ou se o dispositivo bloqueou o acesso.");
       }
-
-      let atData = await fetchCollection('atendimentos', constraints) as Atendimento[];
-      // Sort in memory to avoid needing composite indexes for where + orderBy
-      atData = atData.sort((a, b) => b.data_hora.seconds - a.data_hora.seconds);
-      
-      const asData = await fetchCollection('associados') as Associado[];
-      setAtendimentos(atData);
-      setAssociados(asData);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
+      // CORREÇÃO 6: setar cameraActive antes de setError para evitar flash de render incorreto
+      setCameraActive(false);
+      isScanningRef.current = false;
     }
   };
 
-  const filteredAtendimentos = atendimentos.filter(at => {
-    const assoc = associados.find(a => a.id === at.associado_id);
-    const matchesSearch = assoc?.nome.toLowerCase().includes(searchTerm.toLowerCase()) || false;
-    const matchesStatus = statusFilter === 'todos' || at.status_pagamento === statusFilter;
-    const matchesFornecedor = !isAdmin || fornecedorFilter === 'todos' || at.fornecedor_id === fornecedorFilter;
-    
-    // Date filter
-    const atDate = at.data_hora.toDate();
-    const start = startOfDay(new Date(startDate + 'T00:00:00'));
-    const end = endOfDay(new Date(endDate + 'T23:59:59'));
-    const matchesDate = isWithinInterval(atDate, { start, end });
-
-    return matchesSearch && matchesStatus && matchesDate && matchesFornecedor;
-  });
-
-  const exportExcel = () => {
-    const data = filteredAtendimentos.map(at => {
-      const assoc = associados.find(a => a.id === at.associado_id);
-      const forn = fornecedores.find(f => f.id === at.fornecedor_id);
-      return {
-        'Associado': assoc?.nome,
-        'Fornecedor': forn?.nome || 'Admin',
-        'Data/Hora': format(at.data_hora.toDate(), 'dd/MM/yyyy HH:mm'),
-        'Valor': at.valor_aplicado,
-        'Status': at.status_pagamento === 'pago' ? 'Pago' : 'Pendente'
-      };
-    });
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Atendimentos");
-    XLSX.writeFile(wb, `atendimentos_${startDate}_a_${endDate}.xlsx`);
+  const stopScanner = async () => {
+    if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+      try {
+        await html5QrCodeRef.current.stop();
+      } catch (err) {
+        console.error("Erro ao parar câmera:", err);
+      }
+    }
+    isScanningRef.current = false;
+    setCameraActive(false);
   };
 
-  const exportPDF = () => {
-    const doc = new jsPDF();
-    const title = isAdmin ? "Relatório Geral de Atendimentos" : `Relatório de Atendimentos - ${fornecedores.find(f => f.id === userFornecedorId)?.nome || 'Barbeiro'}`;
-    
-    doc.setFontSize(18);
-    doc.text(title, 14, 20);
-    
-    doc.setFontSize(11);
-    doc.text(`Período: ${format(new Date(startDate + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(endDate + 'T23:59:59'), 'dd/MM/yyyy')}`, 14, 30);
-    doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 37);
+  const onScanSuccess = async (decodedText: string) => {
+    if (!isScanningRef.current) return;
+    isScanningRef.current = false;
+    await stopScanner();
+    setScanResult(decodedText);
+    validateQR(decodedText);
+  };
 
-    const tableData = filteredAtendimentos.map(at => {
-      const assoc = associados.find(a => a.id === at.associado_id);
-      const forn = fornecedores.find(f => f.id === at.fornecedor_id);
-      return [
-        assoc?.nome || 'Desconhecido',
-        isAdmin ? (forn?.nome || 'Admin') : format(at.data_hora.toDate(), 'HH:mm'), // If barber, show time in that col or just skip
-        format(at.data_hora.toDate(), 'dd/MM/yyyy'),
-        `R$ ${at.valor_aplicado.toFixed(2)}`,
-        at.status_pagamento === 'pago' ? 'Pago' : 'Pendente'
-      ];
-    });
+  // CORREÇÃO 2: resetScanner aguarda stopScanner e dá delay antes de reiniciar
+  const resetScanner = async () => {
+    setScanResult(null);
+    setQrData(null);
+    setAssociado(null);
+    setFornecedor(null);
+    setError(null);
+    setSuccess(false);
+    await stopScanner();
+    setTimeout(() => startScanner(), 300);
+  };
 
-    const head = isAdmin 
-      ? [['Associado', 'Fornecedor', 'Data', 'Valor', 'Status']]
-      : [['Associado', 'Hora', 'Data', 'Valor', 'Status']];
+  const validateQR = async (id: string) => {
+    setValidating(true);
+    setError(null);
+    setSuccess(false);
 
-    (doc as any).autoTable({
-      head: head,
-      body: tableData,
-      startY: 45,
-      theme: 'grid',
-      headStyles: { fillStyle: [39, 39, 42] }, // zinc-900
-    });
+    try {
+      const qr = await fetchDocument('qrcodes', id) as QRCodeData | null;
+      if (!qr) {
+        setQrData(null);
+        setAssociado(null);
+        setError('QR Code inválido ou não encontrado.');
+        return;
+      }
 
-    const total = filteredAtendimentos.reduce((acc, curr) => acc + curr.valor_aplicado, 0);
-    const finalY = (doc as any).lastAutoTable.finalY || 45;
-    
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Total: R$ ${total.toFixed(2)}`, 14, finalY + 15);
+      if (qr.status !== 'ativo') {
+        setQrData(null);
+        setAssociado(null);
+        setError(`Este QR Code já foi ${qr.status}.`);
+        return;
+      }
 
-    doc.save(`atendimentos_${startDate}_a_${endDate}.pdf`);
+      if (isAfter(new Date(), qr.expira_em.toDate())) {
+        setQrData(null);
+        setAssociado(null);
+        setError('Este QR Code está expirado.');
+        return;
+      }
+
+      const assoc = await fetchDocument('associados', qr.associado_id) as Associado | null;
+      if (!assoc || !assoc.ativo) {
+        setQrData(null);
+        setAssociado(null);
+        setError('Associado vinculado a este QR Code não foi encontrado ou está inativo.');
+        return;
+      }
+
+      let detectedFornecedor: Fornecedor | null = null;
+
+      if (isBarbeiro) {
+        let fData = await fetchCollection('fornecedores', [where('usuario_id', '==', user?.uid)]) as Fornecedor[];
+
+        if (fData.length === 0 && user?.email) {
+          const emailLower = user.email.toLowerCase().trim();
+          const allActive = await fetchCollection('fornecedores', [where('ativo', '==', true)]) as Fornecedor[];
+          const found = allActive.find(f => f.email.toLowerCase().trim() === emailLower);
+
+          if (found) {
+            fData = [found];
+            if (user.uid) {
+              await updateDocument('fornecedores', found.id, { usuario_id: user.uid });
+            }
+          }
+        }
+
+        if (fData.length === 0) {
+          setQrData(null);
+          setAssociado(null);
+          setError(`Seu usuário (${user?.email}) não está vinculado a nenhuma barbearia ativa. Peça ao administrador para conferir seu e-mail no cadastro de Fornecedores.`);
+          return;
+        }
+        detectedFornecedor = fData[0];
+      } else if (isAdmin) {
+        let list = allFornecedores;
+        if (list.length === 0) {
+          list = await fetchCollection('fornecedores', [where('ativo', '==', true), orderBy('nome', 'asc')]) as Fornecedor[];
+          setAllFornecedores(list);
+        }
+
+        if (list.length > 0) {
+          detectedFornecedor = list[0];
+        } else {
+          setQrData(null);
+          setAssociado(null);
+          setError('Nenhuma barbearia ativa encontrada. Cadastre um Fornecedor antes de validar atendimentos.');
+          return;
+        }
+      }
+
+      if (detectedFornecedor) {
+        setQrData(qr);
+        setAssociado(assoc);
+        setFornecedor(detectedFornecedor);
+      } else {
+        setQrData(null);
+        setAssociado(null);
+        setError('Não foi possível identificar seu nível de acesso. Tente sair e entrar novamente no sistema.');
+      }
+
+    } catch (err) {
+      console.error(err);
+      setQrData(null);
+      setAssociado(null);
+      setError('Ocorreu um erro técnico ao processar a validação. Tente atualizar a página.');
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const confirmAtendimento = async () => {
+    if (!qrData || !associado) return;
+
+    setValidating(true);
+    try {
+      const valConfigs = await fetchCollection('configuracoes_valor', [orderBy('data_inicio', 'desc'), limit(1)]) as ConfiguracaoValor[];
+      const valor = valConfigs.length > 0 ? valConfigs[0].valor : 25;
+
+      await createDocument('atendimentos', {
+        qrcode_id: qrData.id,
+        fornecedor_id: fornecedor?.id || 'admin_manual',
+        associado_id: associado.id,
+        data_hora: Timestamp.now(),
+        valor_aplicado: valor,
+        status_pagamento: 'pendente'
+      });
+
+      await updateDocument('qrcodes', qrData.id, { status: 'utilizado' });
+      setSuccess(true);
+    } catch (err) {
+      console.error(err);
+      setError('Erro ao confirmar atendimento.');
+    } finally {
+      setValidating(false);
+    }
   };
 
   return (
-    <div className="space-y-8">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-zinc-900">Atendimentos</h2>
-          <p className="text-zinc-500">Histórico de cortes realizados e validados.</p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <button 
-            onClick={exportExcel}
-            className="flex items-center justify-center gap-2 bg-white border border-zinc-200 text-zinc-700 px-4 py-2.5 rounded-xl font-bold hover:bg-zinc-50 transition-all shadow-sm text-sm"
-          >
-            <Download size={18} />
-            Excel
-          </button>
-          <button 
-            onClick={exportPDF}
-            className="flex items-center justify-center gap-2 bg-zinc-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-zinc-800 transition-all shadow-sm text-sm"
-          >
-            <FileDown size={18} />
-            PDF
-          </button>
-        </div>
+    <div className="max-w-2xl mx-auto space-y-8">
+      <header className="text-center">
+        <h2 className="text-3xl font-bold text-zinc-900 mb-2">Validar QR Code</h2>
+        <p className="text-zinc-500">Aponte a câmera para o QR Code do associado.</p>
       </header>
 
-      {/* Filters */}
-      <div className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm">
-        <div className={cn("grid grid-cols-1 gap-6", isAdmin ? "md:grid-cols-4" : "md:grid-cols-3")}>
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Data Início</label>
-            <div className="relative">
-              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-              <input 
-                type="date" 
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full pl-12 pr-4 py-2.5 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900 transition-all text-sm font-medium"
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Data Fim</label>
-            <div className="relative">
-              <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-              <input 
-                type="date" 
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full pl-12 pr-4 py-2.5 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900 transition-all text-sm font-medium"
-              />
-            </div>
-          </div>
-          
-          {isAdmin && (
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Fornecedor</label>
-              <div className="relative">
-                <Scissors className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                <select 
-                  value={fornecedorFilter}
-                  onChange={(e) => setFornecedorFilter(e.target.value)}
-                  className="w-full pl-12 pr-4 py-2.5 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900 transition-all text-sm font-medium appearance-none"
-                >
-                  <option value="todos">Todos Fornecedores</option>
-                  {fornecedores.map(f => (
-                    <option key={f.id} value={f.id}>{f.nome}</option>
-                  ))}
-                </select>
-              </div>
+      {/* CORREÇÃO 5: condição inclui !!error para ocultar câmera quando há erro */}
+      <div className={cn(
+        "bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm overflow-hidden",
+        (scanResult || success || validating || !!error) ? "hidden" : "block"
+      )}>
+        <div className="relative overflow-hidden rounded-2xl bg-zinc-50 aspect-square">
+          {!cameraActive && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center space-y-4 z-10 bg-zinc-50">
+              <RefreshCw className="animate-spin text-zinc-400" size={32} />
+              <p className="text-zinc-500 font-medium">Iniciando câmera...</p>
             </div>
           )}
+          <div id="reader" className="w-full h-full border-none"></div>
+        </div>
+        <div className="mt-6 flex items-center justify-center gap-4 text-zinc-400">
+          <Camera size={20} />
+          <span className="text-sm font-medium">Scanner ativo...</span>
+        </div>
+      </div>
 
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Status Pagamento</label>
-            <div className="flex items-center gap-1 bg-zinc-50 p-1 rounded-xl">
-              <button 
-                onClick={() => setStatusFilter('todos')}
-                className={cn("flex-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all", statusFilter === 'todos' ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500")}
+      {validating && (
+        <div className="bg-white p-10 rounded-3xl border border-zinc-200 shadow-sm text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-zinc-100 border-t-zinc-900 rounded-full animate-spin mx-auto" />
+          <p className="font-bold text-zinc-900">Validando código...</p>
+        </div>
+      )}
+
+      {/* CORREÇÃO 6: bloco único de erro com lógica clara por contexto */}
+      {error && (
+        <div className="bg-red-50 p-8 rounded-3xl border border-red-100 text-center space-y-4">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+            <XCircle size={32} />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-red-900">
+              {!scanResult ? 'Erro de Câmera' : 'Falha na Validação'}
+            </h3>
+            <p className="text-red-600 font-medium mt-1">{error}</p>
+            {!scanResult && (
+              <p className="mt-4 text-sm text-red-500 italic">
+                Dica: Se estiver no celular, tente abrir a aplicação em uma nova aba do navegador.
+              </p>
+            )}
+          </div>
+          <button
+            onClick={!scanResult ? startScanner : resetScanner}
+            className="px-8 py-3 bg-red-600 text-white rounded-2xl font-bold hover:bg-red-700 transition-colors"
+          >
+            {!scanResult ? 'Tentar Novamente' : 'Validar Outro'}
+          </button>
+        </div>
+      )}
+
+      {/* CORREÇÃO 1: removidas classes animate-in, fade-in, zoom-in, duration-300 */}
+      {qrData && associado && !success && !validating && (
+        <div className="bg-white rounded-3xl border border-zinc-200 shadow-xl overflow-hidden">
+          <div className="bg-green-50 p-6 flex items-center gap-4 border-b border-green-100">
+            <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center">
+              <CheckCircle size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-green-900">QR Code Válido</h3>
+              <p className="text-green-700 text-sm">O benefício pode ser utilizado.</p>
+            </div>
+          </div>
+
+          <div className="p-8 space-y-6">
+            <div className="flex items-center gap-4 p-4 bg-zinc-50 rounded-2xl">
+              <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-zinc-400 border border-zinc-100">
+                <User size={24} />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-zinc-400 uppercase">Associado</p>
+                <p className="text-lg font-bold text-zinc-900">{associado.nome}</p>
+                <p className="text-sm text-zinc-500">CPF: {associado.cpf}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-zinc-50 rounded-2xl">
+                <p className="text-xs font-bold text-zinc-400 uppercase mb-1">Emissão</p>
+                <p className="font-bold text-zinc-900">{format(qrData.emitido_em.toDate(), 'dd/MM/yyyy')}</p>
+              </div>
+              <div className="p-4 bg-zinc-50 rounded-2xl">
+                <p className="text-xs font-bold text-zinc-400 uppercase mb-1">Validade</p>
+                <p className="font-bold text-zinc-900">{format(qrData.expira_em.toDate(), 'dd/MM/yyyy')}</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-zinc-50 rounded-2xl space-y-2">
+              <p className="text-xs font-bold text-zinc-400 uppercase">Barbeiro / Fornecedor</p>
+              {isAdmin ? (
+                <div className="relative">
+                  <Scissors className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                  <select
+                    value={fornecedor?.id || ''}
+                    onChange={(e) => {
+                      const selected = allFornecedores.find(f => f.id === e.target.value);
+                      if (selected) setFornecedor(selected);
+                    }}
+                    className="w-full pl-10 pr-4 py-2 bg-white border border-zinc-200 rounded-xl focus:ring-2 focus:ring-zinc-900 transition-all font-bold text-zinc-900 text-sm"
+                  >
+                    {allFornecedores.map(f => (
+                      <option key={f.id} value={f.id}>{f.nome}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Scissors size={16} className="text-zinc-400" />
+                  <p className="font-bold text-zinc-900">{fornecedor?.nome || 'Carregando...'}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 flex gap-4">
+              <button
+                onClick={resetScanner}
+                className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold text-zinc-600 hover:bg-zinc-50 transition-colors"
               >
-                Todos
+                Cancelar
               </button>
-              <button 
-                onClick={() => setStatusFilter('pendente')}
-                className={cn("flex-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all", statusFilter === 'pendente' ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500")}
+              <button
+                onClick={confirmAtendimento}
+                disabled={!fornecedor}
+                className="flex-1 py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 shadow-lg shadow-zinc-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                Pendentes
-              </button>
-              <button 
-                onClick={() => setStatusFilter('pago')}
-                className={cn("flex-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all", statusFilter === 'pago' ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500")}
-              >
-                Pagos
+                <CheckCircle size={20} />
+                Confirmar Corte
               </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-zinc-100">
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
-            <input 
-              type="text" 
-              placeholder="Buscar por associado..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 bg-zinc-50 border-none rounded-2xl focus:ring-2 focus:ring-zinc-900 transition-all"
-            />
+      {/* CORREÇÃO 1: removidas classes animate-in, fade-in, zoom-in, duration-300 */}
+      {success && (
+        <div className="bg-white p-10 rounded-3xl border border-zinc-200 shadow-xl text-center space-y-6">
+          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto">
+            <CheckCircle size={40} />
           </div>
+          <div>
+            <h3 className="text-2xl font-bold text-zinc-900">Atendimento Confirmado!</h3>
+            <p className="text-zinc-500 mt-2">O corte foi registrado com sucesso e o QR Code foi baixado.</p>
+          </div>
+          <button
+            onClick={resetScanner}
+            className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all"
+          >
+            Validar Outro Código
+          </button>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-zinc-50/50">
-                <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Associado</th>
-                {isAdmin && <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Fornecedor</th>}
-                <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Data/Hora</th>
-                <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Valor</th>
-                <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Pagamento</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={isAdmin ? 5 : 4} className="px-6 py-10 text-center text-zinc-500">Carregando...</td>
-                </tr>
-              ) : filteredAtendimentos.length === 0 ? (
-                <tr>
-                  <td colSpan={isAdmin ? 5 : 4} className="px-6 py-10 text-center text-zinc-500">Nenhum atendimento encontrado no período.</td>
-                </tr>
-              ) : (
-                filteredAtendimentos.map((at) => {
-                  const assoc = associados.find(a => a.id === at.associado_id);
-                  const forn = fornecedores.find(f => f.id === at.fornecedor_id);
-                  return (
-                    <tr key={at.id} className="hover:bg-zinc-50/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600 text-xs font-bold">
-                            {assoc?.nome.charAt(0)}
-                          </div>
-                          <p className="font-bold text-zinc-900">{assoc?.nome || 'Desconhecido'}</p>
-                        </div>
-                      </td>
-                      {isAdmin && (
-                        <td className="px-6 py-4">
-                          <p className="text-sm font-medium text-zinc-600">{forn?.nome || 'Admin'}</p>
-                        </td>
-                      )}
-                      <td className="px-6 py-4 text-zinc-600 font-medium">
-                        {format(at.data_hora.toDate(), 'dd/MM/yyyy HH:mm')}
-                      </td>
-                      <td className="px-6 py-4 font-bold text-zinc-900">
-                        R$ {at.valor_aplicado.toFixed(2)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={cn(
-                          "px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit",
-                          at.status_pagamento === 'pago' ? "bg-green-50 text-green-600" : "bg-amber-50 text-amber-600"
-                        )}>
-                          {at.status_pagamento === 'pago' ? <CheckCircle size={12} /> : <Clock size={12} />}
-                          {at.status_pagamento === 'pago' ? 'Pago' : 'Pendente'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-            <tfoot className="bg-zinc-50 font-bold border-t border-zinc-200">
-              <tr>
-                <td colSpan={isAdmin ? 3 : 2} className="px-6 py-4 text-sm font-bold text-zinc-900 text-right uppercase">Total do Período:</td>
-                <td className="px-6 py-4 font-bold text-zinc-900">
-                  R$ {filteredAtendimentos.reduce((sum, at) => sum + at.valor_aplicado, 0).toFixed(2)}
-                </td>
-                <td className="px-6 py-4"></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
