@@ -17,12 +17,20 @@ export default function ValidarQR() {
   const [validating, setValidating] = useState(false);
   const [success, setSuccess] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
-  const { user, profile } = useAuth();
+  const [allFornecedores, setAllFornecedores] = useState<Fornecedor[]>([]);
+  const { user, profile, isAdmin, isBarbeiro } = useAuth();
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const isScanningRef = useRef(false);
 
   useEffect(() => {
+    // Load all fornecedores if admin
+    if (isAdmin) {
+      fetchCollection('fornecedores', [where('ativo', '==', true), orderBy('nome', 'asc')]).then(data => {
+        setAllFornecedores(data as Fornecedor[]);
+      });
+    }
+
     // Add a slight delay to ensure the container is fully rendered
     const timer = setTimeout(() => {
       if (!html5QrCodeRef.current) {
@@ -144,13 +152,28 @@ export default function ValidarQR() {
       setAssociado(assoc);
 
       // 5. Fetch Fornecedor (if current user is a barbeiro)
-      if (profile?.perfil === 'barbeiro') {
-        const fornecedores = await fetchCollection('fornecedores', [where('usuario_id', '==', user?.uid)]) as Fornecedor[];
-        if (fornecedores.length === 0) {
-          setError('Você não está cadastrado como fornecedor ativo.');
+      if (isBarbeiro) {
+        let constraints = [where('usuario_id', '==', user?.uid)];
+        let fData = await fetchCollection('fornecedores', constraints) as Fornecedor[];
+        
+        // Fallback: If not found by UID, try by email
+        if (fData.length === 0 && user?.email) {
+          fData = await fetchCollection('fornecedores', [where('email', '==', user.email)]) as Fornecedor[];
+          
+          // If found by email, update the record with the UID for future logins
+          if (fData.length > 0 && user.uid) {
+            await updateDocument('fornecedores', fData[0].id, { usuario_id: user.uid });
+          }
+        }
+
+        if (fData.length === 0) {
+          setError('Você não está cadastrado como fornecedor ativo. Certifique-se que o administrador cadastrou seu e-mail corretamente.');
           return;
         }
-        setFornecedor(fornecedores[0]);
+        setFornecedor(fData[0]);
+      } else if (isAdmin && allFornecedores.length > 0) {
+        // Default to first one if admin is testing, but let them change
+        setFornecedor(allFornecedores[0]);
       }
 
     } catch (err) {
@@ -296,6 +319,32 @@ export default function ValidarQR() {
               </div>
             </div>
 
+            <div className="p-4 bg-zinc-50 rounded-2xl space-y-2">
+              <p className="text-xs font-bold text-zinc-400 uppercase">Barbeiro / Fornecedor</p>
+              {isAdmin ? (
+                <div className="relative">
+                  <Scissors className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                  <select 
+                    value={fornecedor?.id || ''}
+                    onChange={(e) => {
+                      const selected = allFornecedores.find(f => f.id === e.target.value);
+                      if (selected) setFornecedor(selected);
+                    }}
+                    className="w-full pl-10 pr-4 py-2 bg-white border border-zinc-200 rounded-xl focus:ring-2 focus:ring-zinc-900 transition-all font-bold text-zinc-900 text-sm"
+                  >
+                    {allFornecedores.map(f => (
+                      <option key={f.id} value={f.id}>{f.nome}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Scissors size={16} className="text-zinc-400" />
+                  <p className="font-bold text-zinc-900">{fornecedor?.nome || 'Carregando...'}</p>
+                </div>
+              )}
+            </div>
+
             <div className="pt-4 flex gap-4">
               <button 
                 onClick={resetScanner}
@@ -305,8 +354,10 @@ export default function ValidarQR() {
               </button>
               <button 
                 onClick={confirmAtendimento}
-                className="flex-1 py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 shadow-lg shadow-zinc-200 transition-all"
+                disabled={!fornecedor}
+                className="flex-1 py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 shadow-lg shadow-zinc-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
+                <CheckCircle size={20} />
                 Confirmar Corte
               </button>
             </div>

@@ -49,12 +49,22 @@ export default function Fornecedores() {
       if (editingFornecedor) {
         await updateDocument('fornecedores', editingFornecedor.id, formData);
       } else {
-        // In a real system, we would also create a user account for the barbeiro
-        // For this demo, we'll just create the fornecedor record
-        // We'll assume the usuario_id is linked manually or via a cloud function
+        // Try to find if a user with this email already exists to link immediately
+        const { where } = await import('firebase/firestore');
+        let usuario_id = 'pending';
+        
+        try {
+          const users = await fetchCollection('users', [where('email', '==', formData.email)]) as any[];
+          if (users.length > 0) {
+            usuario_id = users[0].id;
+          }
+        } catch (err) {
+          console.error('Error checking for existing user:', err);
+        }
+
         await createDocument('fornecedores', {
           ...formData,
-          usuario_id: 'pending' // Placeholder
+          usuario_id
         });
       }
       setIsModalOpen(false);

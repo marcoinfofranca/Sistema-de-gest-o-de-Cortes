@@ -33,17 +33,25 @@ export default function Atendimentos() {
       const foData = await fetchCollection('fornecedores') as Fornecedor[];
       setFornecedores(foData);
 
-      let constraints: any[] = [orderBy('data_hora', 'desc')];
+      let constraints: any[] = [];
       
       if (isBarbeiro && profile) {
-        const myFornecedor = foData.find(f => f.usuario_id === profile.id);
+        let myFornecedor = foData.find(f => f.usuario_id === profile.id);
+        
+        if (!myFornecedor && profile.email) {
+          myFornecedor = foData.find(f => f.email === profile.email);
+        }
+
         if (myFornecedor) {
           constraints.push(where('fornecedor_id', '==', myFornecedor.id));
           setUserFornecedorId(myFornecedor.id);
         }
       }
 
-      const atData = await fetchCollection('atendimentos', constraints) as Atendimento[];
+      let atData = await fetchCollection('atendimentos', constraints) as Atendimento[];
+      // Sort in memory to avoid needing composite indexes for where + orderBy
+      atData = atData.sort((a, b) => b.data_hora.seconds - a.data_hora.seconds);
+      
       const asData = await fetchCollection('associados') as Associado[];
       setAtendimentos(atData);
       setAssociados(asData);

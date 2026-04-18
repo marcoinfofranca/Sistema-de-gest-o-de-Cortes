@@ -290,7 +290,12 @@ const Dashboard = () => {
         let atendimentosConstraints: any[] = [];
         if (isBarbeiro && profile) {
           const fornecedores = await fetchCollection('fornecedores') as Fornecedor[];
-          const myFornecedor = fornecedores.find(f => f.usuario_id === profile.id);
+          let myFornecedor = fornecedores.find(f => f.usuario_id === profile.id);
+          
+          if (!myFornecedor && profile.email) {
+            myFornecedor = fornecedores.find(f => f.email === profile.email);
+          }
+
           if (myFornecedor) {
             atendimentosConstraints.push(where('fornecedor_id', '==', myFornecedor.id));
           } else {

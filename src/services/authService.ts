@@ -31,6 +31,21 @@ export const loginWithGoogle = async () => {
         criado_em: new Date()
       };
       await createDocument('users', profile, user.uid);
+
+      // Link to fornecedor if exists by email
+      try {
+        const { fetchCollection, updateDocument } = await import('./firestoreService');
+        const { where } = await import('firebase/firestore');
+        const existingFornecedores = await fetchCollection('fornecedores', [where('email', '==', user.email)]) as any[];
+        
+        for (const forn of existingFornecedores) {
+          if (forn.usuario_id === 'pending' || !forn.usuario_id) {
+            await updateDocument('fornecedores', forn.id, { usuario_id: user.uid });
+          }
+        }
+      } catch (err) {
+        console.error('Error auto-linking fornecedor:', err);
+      }
     }
     
     return { user, profile };
