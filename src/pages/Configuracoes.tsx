@@ -13,6 +13,8 @@ export default function Configuracoes() {
   const [usuarios, setUsuarios] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const MASTER_ADMIN_EMAIL = "marcoinfofranca@gmail.com";
+  const isMasterAdmin = user?.email === MASTER_ADMIN_EMAIL;
 
   // Form states
   const [valorForm, setValorForm] = useState({ valor: 0, data_inicio: '', observacao: '' });
@@ -71,6 +73,10 @@ export default function Configuracoes() {
   };
 
   const handleToggleAdmin = async (u: UserProfile) => {
+    if (!isMasterAdmin) {
+      alert('Apenas o administrador mestre pode realizar esta ação.');
+      return;
+    }
     const newProfile = u.perfil === 'admin' ? 'barbeiro' : 'admin';
     if (!window.confirm(`Deseja alterar o perfil de ${u.nome} para ${newProfile}?`)) return;
     
@@ -271,21 +277,25 @@ export default function Configuracoes() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {u.id !== user?.uid ? (
-                        <button 
-                          onClick={() => handleToggleAdmin(u)}
-                          className={cn(
-                            "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
-                            u.perfil === 'admin' 
-                              ? "text-red-600 hover:bg-red-50" 
-                              : "text-blue-600 hover:bg-blue-50"
-                          )}
-                        >
-                          {u.perfil === 'admin' ? <ShieldAlert size={16} /> : <Shield size={16} />}
-                          {u.perfil === 'admin' ? "Remover Admin" : "Tornar Admin"}
-                        </button>
+                      {isMasterAdmin ? (
+                        u.id !== user?.uid ? (
+                          <button 
+                            onClick={() => handleToggleAdmin(u)}
+                            className={cn(
+                              "inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                              u.perfil === 'admin' 
+                                ? "text-red-600 hover:bg-red-50" 
+                                : "text-blue-600 hover:bg-blue-50"
+                            )}
+                          >
+                            {u.perfil === 'admin' ? <ShieldAlert size={16} /> : <Shield size={16} />}
+                            {u.perfil === 'admin' ? "Remover Admin" : "Tornar Admin"}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-zinc-400 font-medium italic">Você</span>
+                        )
                       ) : (
-                        <span className="text-xs text-zinc-400 font-medium italic">Você</span>
+                        <span className="text-xs text-zinc-400 font-medium italic">Sem permissão</span>
                       )}
                     </td>
                   </tr>
