@@ -11,6 +11,7 @@ export type Associado = {
   id: string;
   nome: string;
   cpf: string;
+  chapa?: string;
   data_nascimento: string;
   telefone: string;
   email: string;

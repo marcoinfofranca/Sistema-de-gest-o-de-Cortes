@@ -19,6 +19,7 @@ export default function Associados() {
   const [formData, setFormData] = useState({
     nome: '',
     cpf: '',
+    chapa: '',
     data_nascimento: '',
     telefone: '',
     email: '',
@@ -51,7 +52,7 @@ export default function Associados() {
       }
       setIsModalOpen(false);
       setEditingAssociado(null);
-      setFormData({ nome: '', cpf: '', data_nascimento: '', telefone: '', email: '', ativo: true });
+      setFormData({ nome: '', cpf: '', chapa: '', data_nascimento: '', telefone: '', email: '', ativo: true });
       loadAssociados();
     } catch (error) {
       console.error(error);
@@ -63,6 +64,7 @@ export default function Associados() {
     setFormData({
       nome: associado.nome,
       cpf: associado.cpf,
+      chapa: associado.chapa || '',
       data_nascimento: associado.data_nascimento,
       telefone: associado.telefone,
       email: associado.email,
@@ -73,7 +75,8 @@ export default function Associados() {
 
   const filteredAssociados = associados.filter(a => 
     a.nome.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    a.cpf.includes(searchTerm)
+    a.cpf.includes(searchTerm) ||
+    (a.chapa && a.chapa.includes(searchTerm))
   );
 
   return (
@@ -87,7 +90,7 @@ export default function Associados() {
           <button 
             onClick={() => {
               setEditingAssociado(null);
-              setFormData({ nome: '', cpf: '', data_nascimento: '', telefone: '', email: '', ativo: true });
+              setFormData({ nome: '', cpf: '', chapa: '', data_nascimento: '', telefone: '', email: '', ativo: true });
               setIsModalOpen(true);
             }}
             className="flex items-center justify-center gap-2 bg-zinc-900 text-white px-6 py-3 rounded-2xl font-bold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
@@ -117,6 +120,7 @@ export default function Associados() {
             <thead>
               <tr className="bg-zinc-50/50">
                 <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Nome</th>
+                <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Chapa</th>
                 <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">CPF</th>
                 <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Telefone</th>
                 <th className="px-6 py-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Status</th>
@@ -126,11 +130,11 @@ export default function Associados() {
             <tbody className="divide-y divide-zinc-100">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-zinc-500">Carregando...</td>
+                  <td colSpan={6} className="px-6 py-10 text-center text-zinc-500">Carregando...</td>
                 </tr>
               ) : filteredAssociados.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-zinc-500">Nenhum associado encontrado.</td>
+                  <td colSpan={6} className="px-6 py-10 text-center text-zinc-500">Nenhum associado encontrado.</td>
                 </tr>
               ) : (
                 filteredAssociados.map((associado) => (
@@ -146,6 +150,7 @@ export default function Associados() {
                         </div>
                       </div>
                     </td>
+                    <td className="px-6 py-4 text-zinc-600 font-bold">{associado.chapa || '-'}</td>
                     <td className="px-6 py-4 text-zinc-600 font-medium">{associado.cpf}</td>
                     <td className="px-6 py-4 text-zinc-600 font-medium">{associado.telefone}</td>
                     <td className="px-6 py-4">
@@ -208,6 +213,21 @@ export default function Associados() {
                     type="text" 
                     value={formData.cpf}
                     onChange={(e) => setFormData({...formData, cpf: e.target.value})}
+                    className="w-full px-4 py-3 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-zinc-700 mb-1">Chapa (até 5 números)</label>
+                  <input 
+                    type="text" 
+                    maxLength={5}
+                    pattern="\d*"
+                    value={formData.chapa}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '');
+                      if (val.length <= 5) setFormData({...formData, chapa: val});
+                    }}
+                    placeholder="00000"
                     className="w-full px-4 py-3 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900"
                   />
                 </div>

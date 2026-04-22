@@ -20,6 +20,7 @@
       "properties": {
         "nome": { "type": "string" },
         "cpf": { "type": "string" },
+        "chapa": { "type": "string", "description": "Matrícula/Chapa do associado (até 5 números)" },
         "data_nascimento": { "type": "string" },
         "telefone": { "type": "string" },
         "email": { "type": "string", "format": "email" },
