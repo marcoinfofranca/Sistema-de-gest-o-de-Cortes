@@ -266,6 +266,19 @@ export default function ValidarQR() {
     }
   };
 
+  const renderErrorMessage = (msg: string | null) => {
+    if (!msg) return null;
+    try {
+      if (msg.startsWith('{')) {
+        const parsed = JSON.parse(msg);
+        return parsed.error || msg;
+      }
+    } catch (e) {
+      // Not JSON
+    }
+    return msg;
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-8">
       <header className="text-center">
@@ -307,7 +320,7 @@ export default function ValidarQR() {
           </div>
           <div>
             <h3 className="text-xl font-bold text-red-900">Erro de Câmera</h3>
-            <p className="text-red-600 font-medium whitespace-pre-line">{error}</p>
+            <p className="text-red-600 font-medium whitespace-pre-line">{renderErrorMessage(error)}</p>
             <p className="mt-4 text-sm text-red-500 italic">Dica: Se estiver usando o celular, tente abrir a aplicação em uma nova aba do navegador para facilitar o acesso à câmera.</p>
           </div>
           <button 
@@ -326,7 +339,7 @@ export default function ValidarQR() {
           </div>
           <div>
             <h3 className="text-xl font-bold text-red-900">Falha na Validação</h3>
-            <p className="text-red-600 font-medium">{error}</p>
+            <p className="text-red-600 font-medium">{renderErrorMessage(error)}</p>
           </div>
           <button 
             onClick={resetScanner}

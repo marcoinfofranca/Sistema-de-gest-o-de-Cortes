@@ -66,7 +66,12 @@ export default function Atendimentos() {
 
   const filteredAtendimentos = atendimentos.filter(at => {
     const assoc = associados.find(a => a.id === at.associado_id);
-    const matchesSearch = assoc?.nome.toLowerCase().includes(searchTerm.toLowerCase()) || false;
+    const lowerSearch = searchTerm.toLowerCase();
+    const matchesSearch = 
+      assoc?.nome.toLowerCase().includes(lowerSearch) || 
+      assoc?.cpf.includes(lowerSearch) || 
+      (assoc?.chapa && assoc.chapa.includes(lowerSearch)) ||
+      false;
     const matchesStatus = statusFilter === 'todos' || at.status_pagamento === statusFilter;
     const matchesFornecedor = !isAdmin || fornecedorFilter === 'todos' || at.fornecedor_id === fornecedorFilter;
     
