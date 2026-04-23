@@ -1,104 +1,127 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Fields: nome (string), email (string), perfil (string: admin|barbeiro), ativo (bool), criado_em (timestamp)
-    //
-    // Collection: associados
-    // Fields: nome (string), cpf (string), data_nascimento (string), telefone (string), email (string), ativo (bool), criado_em (timestamp)
-    //
-    // Collection: fornecedores
-    // Fields: nome (string), cpf_cnpj (string), endereco (string), telefone (string), whatsapp (string), email (string), banco (string), agencia (string), conta (string), ativo (bool), usuario_id (string), criado_em (timestamp)
-    //
-    // Collection: configuracoes_valor
-    // Fields: valor (number), data_inicio (timestamp), data_fim (timestamp|null), observacao (string), criado_por (string), criado_em (timestamp)
-    //
-    // Collection: configuracoes_expiracao
-    // Fields: dias_validade (number), data_inicio (timestamp), observacao (string), criado_por (string), criado_em (timestamp)
-    //
-    // Collection: qrcodes
-    // Fields: associado_id (string), emitido_em (timestamp), expira_em (timestamp), status (string: ativo|utilizado|expirado|cancelado), criado_por (string)
-    //
-    // Collection: atendimentos
-    // Fields: qrcode_id (string), fornecedor_id (string), associado_id (string), data_hora (timestamp), valor_aplicado (number), status_pagamento (string: pendente|pago), pagamento_id (string|null)
-    //
-    // Collection: pagamentos
-    // Fields: fornecedor_id (string), data_pagamento (timestamp), valor_total (number), forma_pagamento (string), comprovante_url (string|null), criado_por (string), criado_em (timestamp)
+    
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
 
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
-    function isAuthenticated() {
+    // Phase 3: Primitives
+    function isSignedIn() {
       return request.auth != null;
     }
 
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
     function isAdmin() {
-      return isAuthenticated() && 
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.perfil == 'admin' ||
-         (request.auth.token.email == "marcoinfofranca@gmail.com" && request.auth.token.email_verified == true));
+      return isSignedIn() && (
+        getUserData().perfil == 'admin' || 
+        (request.auth.token.email == "marcoinfofranca@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    function isMasterAdmin() {
+      return isSignedIn() && request.auth.token.email == "marcoinfofranca@gmail.com" && request.auth.token.email_verified == true;
     }
 
     function isBarbeiro() {
-      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.perfil == 'barbeiro';
+      return isSignedIn() && getUserData().perfil == 'barbeiro';
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    // Entity Validations
+    function isValidUser(data) {
+      return data.nome is string && data.nome.size() <= 100 &&
+             data.email is string && data.email.size() <= 100 &&
+             data.perfil in ['admin', 'barbeiro'] &&
+             data.ativo is bool &&
+             data.keys().hasAll(['nome', 'email', 'perfil', 'ativo', 'criado_em']) &&
+             data.keys().size() == 5;
     }
 
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
+    function isValidAssociado(data) {
+      return data.nome is string && data.nome.size() <= 100 &&
+             data.cpf is string && data.cpf.size() <= 14 &&
+             (data.get('chapa', '') == '' || (data.chapa is string && data.chapa.size() <= 5)) &&
+             data.ativo is bool &&
+             data.keys().hasAll(['nome', 'cpf', 'ativo']) &&
+             data.keys().size() <= 9;
     }
 
-    // ===============================================================
     // Rules
-    // ===============================================================
-
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAdmin() || (isOwner(userId) && request.resource.data.perfil == 'barbeiro');
-      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.perfil == resource.data.perfil);
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (
+        isMasterAdmin() || 
+        (request.auth.uid == userId && incoming().perfil == 'barbeiro' && incoming().ativo == true)
+      );
+      allow update: if isSignedIn() && isValidId(userId) && (
+        (isMasterAdmin() && isValidUser(incoming())) ||
+        (request.auth.uid == userId && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'ativo']) &&
+         incoming().nome is string && incoming().nome.size() <= 100)
+      );
     }
 
     match /associados/{associadoId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidId(associadoId) && isValidAssociado(incoming());
     }
 
     match /fornecedores/{fornecedorId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidId(fornecedorId);
     }
 
     match /configuracoes_valor/{configId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidId(configId);
     }
 
     match /configuracoes_expiracao/{configId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidId(configId);
     }
 
     match /qrcodes/{qrcodeId} {
-      allow read: if isAuthenticated();
-      allow create: if isAdmin();
-      allow update: if isAdmin() || (isBarbeiro() && request.resource.data.status == 'utilizado' && resource.data.status == 'ativo');
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidId(qrcodeId);
+      allow update: if isSignedIn() && isValidId(qrcodeId) && (
+        isAdmin() ||
+        (isBarbeiro() && 
+         existing().status == 'ativo' && 
+         incoming().status == 'utilizado' &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+      );
     }
 
     match /atendimentos/{atendimentoId} {
-      allow read: if isAuthenticated();
-      allow create: if isBarbeiro() || isAdmin();
-      allow update: if isAdmin();
+      allow read: if isSignedIn();
+      allow create: if (isAdmin() || isBarbeiro()) && isValidId(atendimentoId);
+      allow update: if isAdmin() && isValidId(atendimentoId);
+    }
+
+    match /atendimentos_stats/{atendimentoId} {
+      allow read, write: if false; // System only
     }
 
     match /pagamentos/{pagamentoId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidId(pagamentoId);
     }
   }
 }
