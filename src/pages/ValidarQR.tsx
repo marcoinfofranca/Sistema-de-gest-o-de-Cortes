@@ -20,6 +20,12 @@ export default function ValidarQR() {
   const [allFornecedores, setAllFornecedores] = useState<Fornecedor[]>([]);
   const { user, profile, isAdmin, isBarbeiro } = useAuth();
   
+  // Use refs to avoid stale closures in the scanner callbacks
+  const authRef = useRef({ user, profile, isAdmin, isBarbeiro });
+  useEffect(() => {
+    authRef.current = { user, profile, isAdmin, isBarbeiro };
+  }, [user, profile, isAdmin, isBarbeiro]);
+
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const transitionRef = useRef(false);
   // CORREÇÃO 4: isScanningRef starts true for first scan
@@ -32,7 +38,9 @@ export default function ValidarQR() {
         setAllFornecedores(data as Fornecedor[]);
       });
     }
+  }, [isAdmin]);
 
+  useEffect(() => {
     // CORREÇÃO 3: verify if #reader exists
     const el = document.getElementById('reader');
     if (el && !html5QrCodeRef.current) {
@@ -161,9 +169,9 @@ export default function ValidarQR() {
     setValidating(true);
     setError(null);
     setSuccess(false);
-    // Don't clear these yet, wait for results
-    // setQrData(null);
-    // setAssociado(null);
+    
+    // Use the latest auth data from ref
+    const { user: currUser, isAdmin: currIsAdmin, isBarbeiro: currIsBarbeiro } = authRef.current;
 
     try {
       // 1. Fetch QR Data
@@ -203,13 +211,13 @@ export default function ValidarQR() {
       // 5. Fetch Fornecedor (Important step)
       let detectedFornecedor: Fornecedor | null = null;
 
-      if (isBarbeiro) {
+      if (currIsBarbeiro) {
         // Try exactly by UID first
-        let fData = await fetchCollection('fornecedores', [where('usuario_id', '==', user?.uid)]) as Fornecedor[];
+        let fData = await fetchCollection('fornecedores', [where('usuario_id', '==', currUser?.uid)]) as Fornecedor[];
         
         // Fallback: Try by Email (case-insensitive in JS)
-        if (fData.length === 0 && user?.email) {
-          const emailLower = user.email.toLowerCase().trim();
+        if (fData.length === 0 && currUser?.email) {
+          const emailLower = currUser.email.toLowerCase().trim();
           // Fetch all active to be safe and filter in JS
           const allActive = await fetchCollection('fornecedores', [where('ativo', '==', true)]) as Fornecedor[];
           const found = allActive.find(f => f.email.toLowerCase().trim() === emailLower);
@@ -217,8 +225,8 @@ export default function ValidarQR() {
           if (found) {
             fData = [found];
             // Auto-link UID
-            if (user.uid) {
-              await updateDocument('fornecedores', found.id, { usuario_id: user.uid });
+            if (currUser.uid) {
+              await updateDocument('fornecedores', found.id, { usuario_id: currUser.uid });
             }
           }
         }
@@ -226,11 +234,11 @@ export default function ValidarQR() {
         if (fData.length === 0) {
           setQrData(null);
           setAssociado(null);
-          setError(`Seu usuário (${user?.email}) não está vinculado a nenhuma barbearia ativa. Peça ao administrador para conferir seu e-mail no cadastro de Fornecedores.`);
+          setError(`Seu usuário (${currUser?.email}) não está vinculado a nenhuma barbearia ativa. Peça ao administrador para conferir seu e-mail no cadastro de Fornecedores.`);
           return;
         }
         detectedFornecedor = fData[0];
-      } else if (isAdmin) {
+      } else if (currIsAdmin) {
         // Load in-place if not yet loaded
         let list = allFornecedores;
         if (list.length === 0) {
