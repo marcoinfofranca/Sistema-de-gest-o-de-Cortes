@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Search, CheckCircle, XCircle, User, Calendar, Scissors, AlertCircle, Camera, Upload, RefreshCw } from 'lucide-react';
+import { CheckCircle, XCircle, User, Scissors, Camera, RefreshCw } from 'lucide-react';
 import { fetchDocument, updateDocument, createDocument, fetchCollection } from '../services/firestoreService';
 import { QRCodeData, Associado, Fornecedor, ConfiguracaoValor } from '../types';
 import { format, isAfter } from 'date-fns';
@@ -21,6 +21,7 @@ export default function ValidarQR() {
   const { user, profile, isAdmin, isBarbeiro } = useAuth();
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  const transitionRef = useRef(false);
   // CORREÇÃO 4: isScanningRef starts true for first scan
   const isScanningRef = useRef(true);
 
@@ -37,18 +38,35 @@ export default function ValidarQR() {
     if (el && !html5QrCodeRef.current) {
       html5QrCodeRef.current = new Html5Qrcode('reader');
     }
-    startScanner();
+    
+    // Give it a small delay to ensure DOM is ready
+    const timer = setTimeout(() => {
+      startScanner();
+    }, 500);
 
     return () => {
+      clearTimeout(timer);
       stopScanner();
     };
   }, []);
 
   const startScanner = async () => {
-    if (!html5QrCodeRef.current) return;
+    if (transitionRef.current) return;
+
+    // CORREÇÃO: Wait a bit to ensure element exists if called too fast
+    const el = document.getElementById('reader');
+    if (!el) {
+      setTimeout(startScanner, 100);
+      return;
+    }
+
+    if (!html5QrCodeRef.current) {
+      html5QrCodeRef.current = new Html5Qrcode('reader');
+    }
+
     if (html5QrCodeRef.current.isScanning) return;
     
-    // CORREÇÃO 4: Reset isScanningRef to true
+    transitionRef.current = true;
     isScanningRef.current = true;
     
     try {
@@ -61,7 +79,7 @@ export default function ValidarQR() {
           fps: 15,
           qrbox: (viewfinderWidth, viewfinderHeight) => {
             const minEdgeSize = Math.min(viewfinderWidth, viewfinderHeight);
-            const qrboxSize = Math.floor(minEdgeSize * 0.7);
+            const qrboxSize = Math.max(150, Math.floor(minEdgeSize * 0.7)); // Ensure minimum 150px
             return {
               width: qrboxSize,
               height: qrboxSize
@@ -74,25 +92,41 @@ export default function ValidarQR() {
       );
     } catch (err: any) {
       console.error("Erro ao iniciar câmera:", err);
-      if (err?.toString().includes("NotAllowedError") || err?.toString().includes("Permission dismissed")) {
-        setError("O acesso à câmera foi negado. Para validar o código, clique no ícone de cadeado na barra de endereços do seu navegador e permita o uso da câmera.");
+      const errMsg = err?.toString() || "";
+      if (errMsg.includes("NotAllowedError") || errMsg.includes("Permission denied") || errMsg.includes("Permission dismissed")) {
+        setError("O acesso à câmera foi negado. Por favor, permita o acesso nas configurações do seu navegador ou clique no ícone de cadeado na barra de endereços.");
+      } else if (errMsg.includes("NotFoundError")) {
+        setError("Nenhuma câmera foi encontrada no seu dispositivo.");
+      } else if (errMsg.includes("already under transition")) {
+        // Ignore, handled by transitionRef
       } else {
         setError("Não foi possível acessar a câmera. Verifique se outra aba está usando a câmera ou se o seu dispositivo bloqueou o acesso.");
       }
       setCameraActive(false);
       isScanningRef.current = false;
+    } finally {
+      transitionRef.current = false;
     }
   };
 
   const stopScanner = async () => {
-    if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
-      try {
-        await html5QrCodeRef.current.stop();
+    if (!html5QrCodeRef.current || !html5QrCodeRef.current.isScanning || transitionRef.current) return;
+
+    transitionRef.current = true;
+    try {
+      await html5QrCodeRef.current.stop();
+      isScanningRef.current = false;
+      setCameraActive(false);
+    } catch (err: any) {
+      console.error("Erro ao parar câmera:", err);
+      // If it says it's not scanning, just reset our state
+      const errMsg = err?.toString() || "";
+      if (errMsg.includes("Scanner is not scanning")) {
         isScanningRef.current = false;
         setCameraActive(false);
-      } catch (err) {
-        console.error("Erro ao parar câmera:", err);
       }
+    } finally {
+      transitionRef.current = false;
     }
   };
 
@@ -266,19 +300,6 @@ export default function ValidarQR() {
     }
   };
 
-  const renderErrorMessage = (msg: string | null) => {
-    if (!msg) return null;
-    try {
-      if (msg.startsWith('{')) {
-        const parsed = JSON.parse(msg);
-        return parsed.error || msg;
-      }
-    } catch (e) {
-      // Not JSON
-    }
-    return msg;
-  };
-
   return (
     <div className="max-w-2xl mx-auto space-y-8">
       <header className="text-center">
@@ -286,7 +307,7 @@ export default function ValidarQR() {
         <p className="text-zinc-500">Aponte a câmera para o QR Code do associado.</p>
       </header>
 
-      {/* CORREÇÃO 5: hide camera when there's an error */}
+      {/* Scanner UI */}
       <div className={cn(
         "bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm overflow-hidden",
         (scanResult || success || validating || !!error) ? "hidden" : "block"
@@ -320,7 +341,7 @@ export default function ValidarQR() {
           </div>
           <div>
             <h3 className="text-xl font-bold text-red-900">Erro de Câmera</h3>
-            <p className="text-red-600 font-medium whitespace-pre-line">{renderErrorMessage(error)}</p>
+            <p className="text-red-600 font-medium whitespace-pre-line">{error}</p>
             <p className="mt-4 text-sm text-red-500 italic">Dica: Se estiver usando o celular, tente abrir a aplicação em uma nova aba do navegador para facilitar o acesso à câmera.</p>
           </div>
           <button 
@@ -339,7 +360,7 @@ export default function ValidarQR() {
           </div>
           <div>
             <h3 className="text-xl font-bold text-red-900">Falha na Validação</h3>
-            <p className="text-red-600 font-medium">{renderErrorMessage(error)}</p>
+            <p className="text-red-600 font-medium">{error}</p>
           </div>
           <button 
             onClick={resetScanner}

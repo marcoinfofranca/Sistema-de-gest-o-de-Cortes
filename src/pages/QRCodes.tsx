@@ -13,7 +13,6 @@ export default function QRCodes() {
   const [associados, setAssociados] = useState<Associado[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedAssociado, setSelectedAssociado] = useState<string>('');
   const [generatedQR, setGeneratedQR] = useState<string | null>(null);
@@ -145,7 +144,7 @@ export default function QRCodes() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
             <input 
               type="text" 
-              placeholder="Buscar por associado ou chapa..." 
+              placeholder="Buscar por associado..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-12 pr-4 py-3 bg-zinc-50 border-none rounded-2xl focus:ring-2 focus:ring-zinc-900 transition-all"
@@ -174,16 +173,7 @@ export default function QRCodes() {
                   <td colSpan={5} className="px-6 py-10 text-center text-zinc-500">Nenhum QR code encontrado.</td>
                 </tr>
               ) : (
-                qrcodes
-                  .filter(qr => {
-                    const assoc = associados.find(a => a.id === qr.associado_id);
-                    const search = searchTerm.toLowerCase();
-                    return assoc?.nome.toLowerCase().includes(search) || 
-                           assoc?.cpf.includes(search) || 
-                           (assoc?.chapa && assoc.chapa.includes(search)) ||
-                           qr.id.toLowerCase().includes(search);
-                  })
-                  .map((qr) => {
+                qrcodes.map((qr) => {
                   const assoc = associados.find(a => a.id === qr.associado_id);
                   return (
                     <tr key={qr.id} className="hover:bg-zinc-50/50 transition-colors group">
@@ -194,9 +184,7 @@ export default function QRCodes() {
                           </div>
                           <div>
                             <p className="font-bold text-zinc-900">{assoc?.nome || 'Desconhecido'}</p>
-                            <p className="text-xs text-zinc-500">
-                              {assoc?.chapa ? `Chapa: ${assoc.chapa}` : `CPF: ${assoc?.cpf}`} • ID: {qr.id.substring(0, 8)}...
-                            </p>
+                            <p className="text-xs text-zinc-500">ID: {qr.id.substring(0, 8)}...</p>
                           </div>
                         </div>
                       </td>
@@ -242,45 +230,18 @@ export default function QRCodes() {
             <div className="p-6 space-y-6">
               {!generatedQR ? (
                 <>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-bold text-zinc-700 mb-2">Buscar Associado (Nome, CPF ou Chapa)</label>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                        <input 
-                          type="text"
-                          placeholder="Digite para filtrar..."
-                          value={modalSearchTerm}
-                          onChange={(e) => setModalSearchTerm(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-100 rounded-xl focus:ring-2 focus:ring-zinc-900"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-bold text-zinc-700 mb-2">Selecione o Associado</label>
-                      <select 
-                        value={selectedAssociado}
-                        onChange={(e) => setSelectedAssociado(e.target.value)}
-                        className="w-full px-4 py-3 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900"
-                      >
-                        <option value="">Selecione...</option>
-                        {associados
-                          .filter(a => a.ativo)
-                          .filter(a => {
-                            const search = modalSearchTerm.toLowerCase();
-                            return a.nome.toLowerCase().includes(search) || 
-                                   a.cpf.includes(search) || 
-                                   (a.chapa && a.chapa.includes(search));
-                          })
-                          .map(a => (
-                            <option key={a.id} value={a.id}>
-                              {a.nome} {a.chapa ? `(Chapa: ${a.chapa})` : `(${a.cpf})`}
-                            </option>
-                          ))
-                        }
-                      </select>
-                    </div>
+                  <div>
+                    <label className="block text-sm font-bold text-zinc-700 mb-2">Selecione o Associado</label>
+                    <select 
+                      value={selectedAssociado}
+                      onChange={(e) => setSelectedAssociado(e.target.value)}
+                      className="w-full px-4 py-3 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900"
+                    >
+                      <option value="">Selecione...</option>
+                      {associados.filter(a => a.ativo).map(a => (
+                        <option key={a.id} value={a.id}>{a.nome} ({a.cpf})</option>
+                      ))}
+                    </select>
                   </div>
                   <button 
                     onClick={generateQR}

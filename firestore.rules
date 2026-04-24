@@ -1,127 +1,29 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // 0. Default Deny
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Phase 3: Primitives
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-    
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && (
-        getUserData().perfil == 'admin' || 
-        (request.auth.token.email == "marcoinfofranca@gmail.com" && request.auth.token.email_verified == true)
-      );
-    }
-
-    function isMasterAdmin() {
-      return isSignedIn() && request.auth.token.email == "marcoinfofranca@gmail.com" && request.auth.token.email_verified == true;
-    }
-
-    function isBarbeiro() {
-      return isSignedIn() && getUserData().perfil == 'barbeiro';
-    }
-
-    // Entity Validations
-    function isValidUser(data) {
-      return data.nome is string && data.nome.size() <= 100 &&
-             data.email is string && data.email.size() <= 100 &&
-             data.perfil in ['admin', 'barbeiro'] &&
-             data.ativo is bool &&
-             data.keys().hasAll(['nome', 'email', 'perfil', 'ativo', 'criado_em']) &&
-             data.keys().size() == 5;
-    }
-
-    function isValidAssociado(data) {
-      return data.nome is string && data.nome.size() <= 100 &&
-             data.cpf is string && data.cpf.size() <= 14 &&
-             (data.get('chapa', '') == '' || (data.chapa is string && data.chapa.size() <= 5)) &&
-             data.ativo is bool &&
-             data.keys().hasAll(['nome', 'cpf', 'ativo']) &&
-             data.keys().size() <= 9;
-    }
-
-    // Rules
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (
-        isMasterAdmin() || 
-        (request.auth.uid == userId && incoming().perfil == 'barbeiro' && incoming().ativo == true)
-      );
-      allow update: if isSignedIn() && isValidId(userId) && (
-        (isMasterAdmin() && isValidUser(incoming())) ||
-        (request.auth.uid == userId && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'ativo']) &&
-         incoming().nome is string && incoming().nome.size() <= 100)
-      );
+      allow read, write: if request.auth != null;
     }
-
     match /associados/{associadoId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidId(associadoId) && isValidAssociado(incoming());
+      allow read, write: if request.auth != null;
     }
-
     match /fornecedores/{fornecedorId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidId(fornecedorId);
+      allow read, write: if request.auth != null;
     }
-
     match /configuracoes_valor/{configId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidId(configId);
+      allow read, write: if request.auth != null;
     }
-
     match /configuracoes_expiracao/{configId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidId(configId);
+      allow read, write: if request.auth != null;
     }
-
     match /qrcodes/{qrcodeId} {
-      allow read: if isSignedIn();
-      allow create: if isAdmin() && isValidId(qrcodeId);
-      allow update: if isSignedIn() && isValidId(qrcodeId) && (
-        isAdmin() ||
-        (isBarbeiro() && 
-         existing().status == 'ativo' && 
-         incoming().status == 'utilizado' &&
-         incoming().diff(existing()).affectedKeys().hasOnly(['status']))
-      );
+      allow read, write: if request.auth != null;
     }
-
     match /atendimentos/{atendimentoId} {
-      allow read: if isSignedIn();
-      allow create: if (isAdmin() || isBarbeiro()) && isValidId(atendimentoId);
-      allow update: if isAdmin() && isValidId(atendimentoId);
+      allow read, write: if request.auth != null;
     }
-
-    match /atendimentos_stats/{atendimentoId} {
-      allow read, write: if false; // System only
-    }
-
     match /pagamentos/{pagamentoId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidId(pagamentoId);
+      allow read, write: if request.auth != null;
     }
   }
 }
