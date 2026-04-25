@@ -217,7 +217,9 @@ const Login = () => {
       await loginWithGoogle();
     } catch (err: any) {
       console.error(err);
-      if (err.code === 'auth/unauthorized-domain') {
+      if (err.message === 'email nao cadastrado entrar em contato com sindicato') {
+        setError('E-mail não cadastrado! Entre em contato com o sindicato para habilitar seu acesso.');
+      } else if (err.code === 'auth/unauthorized-domain') {
         setError('Este domínio não está autorizado no Firebase. Por favor, adicione o domínio atual nas configurações de autenticação do Firebase.');
       } else {
         setError('Ocorreu um erro ao fazer login. Tente novamente.');
