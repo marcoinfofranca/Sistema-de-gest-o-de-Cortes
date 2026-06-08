@@ -107,7 +107,7 @@ export default function Associados() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
             <input 
               type="text" 
-              placeholder="Buscar por nome ou CPF..." 
+              placeholder="Buscar por nome, CPF ou chapa..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-12 pr-4 py-3 bg-zinc-50 border-none rounded-2xl focus:ring-2 focus:ring-zinc-900 transition-all"

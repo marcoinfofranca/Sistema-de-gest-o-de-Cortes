@@ -116,6 +116,19 @@ export default function QRCodes() {
     return <span className="px-3 py-1 bg-green-50 text-green-600 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><QrCode size={12} /> Ativo</span>;
   };
 
+  const filteredQRCodes = qrcodes.filter(qr => {
+    const assoc = associados.find(a => a.id === qr.associado_id);
+    const term = searchTerm.toLowerCase().trim();
+    if (!term) return true;
+
+    const matchNome = assoc?.nome ? assoc.nome.toLowerCase().includes(term) : false;
+    const matchCpf = assoc?.cpf ? assoc.cpf.includes(term) : false;
+    const matchChapa = assoc?.chapa ? assoc.chapa.toLowerCase().includes(term) : false;
+    const matchId = qr.id.toLowerCase().includes(term);
+
+    return matchNome || matchCpf || matchChapa || matchId;
+  });
+
   return (
     <div className="space-y-8">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -144,7 +157,7 @@ export default function QRCodes() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
             <input 
               type="text" 
-              placeholder="Buscar por associado..." 
+              placeholder="Buscar por associado, chapa, CPF ou ID..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-12 pr-4 py-3 bg-zinc-50 border-none rounded-2xl focus:ring-2 focus:ring-zinc-900 transition-all"
@@ -168,12 +181,12 @@ export default function QRCodes() {
                 <tr>
                   <td colSpan={5} className="px-6 py-10 text-center text-zinc-500">Carregando...</td>
                 </tr>
-              ) : qrcodes.length === 0 ? (
+              ) : filteredQRCodes.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-10 text-center text-zinc-500">Nenhum QR code encontrado.</td>
                 </tr>
               ) : (
-                qrcodes.map((qr) => {
+                filteredQRCodes.map((qr) => {
                   const assoc = associados.find(a => a.id === qr.associado_id);
                   return (
                     <tr key={qr.id} className="hover:bg-zinc-50/50 transition-colors group">
@@ -184,7 +197,16 @@ export default function QRCodes() {
                           </div>
                           <div>
                             <p className="font-bold text-zinc-900">{assoc?.nome || 'Desconhecido'}</p>
-                            <p className="text-xs text-zinc-500">ID: {qr.id.substring(0, 8)}...</p>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-500 mt-0.5">
+                              {assoc?.chapa && (
+                                <span className="bg-zinc-100 text-zinc-700 px-1.5 py-0.5 rounded font-bold">
+                                  Chapa: {assoc.chapa}
+                                </span>
+                              )}
+                              <span>CPF: {assoc?.cpf || '-'}</span>
+                              <span>•</span>
+                              <span>ID: {qr.id.substring(0, 8)}...</span>
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -239,7 +261,9 @@ export default function QRCodes() {
                     >
                       <option value="">Selecione...</option>
                       {associados.filter(a => a.ativo).map(a => (
-                        <option key={a.id} value={a.id}>{a.nome} ({a.cpf})</option>
+                        <option key={a.id} value={a.id}>
+                          {a.nome} (CPF: {a.cpf}{a.chapa ? ` - Chapa: ${a.chapa}` : ''})
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -323,6 +347,12 @@ export default function QRCodes() {
                   <span className="text-xs font-bold text-zinc-400 uppercase">Associado</span>
                   <span className="font-bold text-zinc-900">{associados.find(a => a.id === viewingQR.associado_id)?.nome}</span>
                 </div>
+                {associados.find(a => a.id === viewingQR.associado_id)?.chapa && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-zinc-400 uppercase">Chapa</span>
+                    <span className="font-bold text-zinc-900">{associados.find(a => a.id === viewingQR.associado_id)?.chapa}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold text-zinc-400 uppercase">Status</span>
                   {getStatusBadge(viewingQR.status, viewingQR.expira_em)}
