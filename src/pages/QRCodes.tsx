@@ -15,10 +15,26 @@ export default function QRCodes() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedAssociado, setSelectedAssociado] = useState<string>('');
+  const [modalSearchTerm, setModalSearchTerm] = useState('');
   const [generatedQR, setGeneratedQR] = useState<string | null>(null);
   const [viewingQR, setViewingQR] = useState<QRCodeData | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const { isAdmin, user } = useAuth();
+
+  const selectedAssocInstance = associados.find(a => a.id === selectedAssociado);
+
+  const filteredAssociadosForModal = associados
+    .filter(a => a.ativo)
+    .filter(a => {
+      const term = modalSearchTerm.toLowerCase().trim();
+      if (!term) return true;
+      
+      const matchNome = a.nome ? a.nome.toLowerCase().includes(term) : false;
+      const matchCpf = a.cpf ? a.cpf.replace(/[.-]/g, '').includes(term.replace(/[.-]/g, '')) : false;
+      const matchChapa = a.chapa ? a.chapa.toLowerCase().includes(term) : false;
+      
+      return matchNome || matchCpf || matchChapa;
+    });
 
   useEffect(() => {
     loadData();
@@ -141,6 +157,7 @@ export default function QRCodes() {
             onClick={() => {
               setGeneratedQR(null);
               setSelectedAssociado('');
+              setModalSearchTerm('');
               setIsModalOpen(true);
             }}
             className="flex items-center justify-center gap-2 bg-zinc-900 text-white px-6 py-3 rounded-2xl font-bold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
@@ -252,28 +269,92 @@ export default function QRCodes() {
             <div className="p-6 space-y-6">
               {!generatedQR ? (
                 <>
-                  <div>
-                    <label className="block text-sm font-bold text-zinc-700 mb-2">Selecione o Associado</label>
-                    <select 
-                      value={selectedAssociado}
-                      onChange={(e) => setSelectedAssociado(e.target.value)}
-                      className="w-full px-4 py-3 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900"
-                    >
-                      <option value="">Selecione...</option>
-                      {associados.filter(a => a.ativo).map(a => (
-                        <option key={a.id} value={a.id}>
-                          {a.nome} (CPF: {a.cpf}{a.chapa ? ` - Chapa: ${a.chapa}` : ''})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <button 
-                    onClick={generateQR}
-                    disabled={!selectedAssociado}
-                    className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 shadow-lg shadow-zinc-200 disabled:opacity-50"
-                  >
-                    Gerar Código
-                  </button>
+                  {!selectedAssociado ? (
+                    <div className="space-y-3">
+                      <label className="block text-sm font-bold text-zinc-700">Selecione o Associado por Nome, Chapa ou CPF</label>
+                      <div className="relative">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                        <input
+                          type="text"
+                          placeholder="Digite o nome, n° chapa ou CPF..."
+                          value={modalSearchTerm}
+                          onChange={(e) => setModalSearchTerm(e.target.value)}
+                          className="w-full pl-10 pr-4 py-3 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900 text-sm focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="max-h-48 overflow-y-auto border border-zinc-100 rounded-xl divide-y divide-zinc-50 bg-white">
+                        {filteredAssociadosForModal.length === 0 ? (
+                          <p className="p-4 text-sm text-zinc-500 text-center">Nenhum associado ativo encontrado.</p>
+                        ) : (
+                          filteredAssociadosForModal.slice(0, 15).map(a => (
+                            <button
+                              key={a.id}
+                              type="button"
+                              onClick={() => setSelectedAssociado(a.id)}
+                              className="w-full text-left px-4 py-3 text-sm hover:bg-zinc-50 transition-colors flex items-center justify-between"
+                            >
+                              <div className="min-w-0 flex-1 pr-2">
+                                <p className="font-bold text-zinc-900 truncate">{a.nome}</p>
+                                <p className="text-xs text-zinc-500 truncate mt-0.5">
+                                  {a.chapa && <span className="mr-2 font-bold text-zinc-700 bg-zinc-100 px-1.5 py-0.5 rounded">Chapa: {a.chapa}</span>}
+                                  <span>CPF: {a.cpf}</span>
+                                </p>
+                              </div>
+                              <Plus size={16} className="text-zinc-400" />
+                            </button>
+                          ))
+                        )}
+                        {filteredAssociadosForModal.length > 15 && (
+                          <div className="p-2 text-center text-[10px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-50">
+                            Mostrando 15 de {filteredAssociadosForModal.length} resultados. Continue digitando...
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <label className="block text-sm font-bold text-zinc-700">Associado Selecionado</label>
+                      <div className="flex items-center justify-between p-4 bg-zinc-50 border border-zinc-100 rounded-2xl">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-zinc-900 text-white flex items-center justify-center font-bold text-sm">
+                            {selectedAssocInstance?.nome ? selectedAssocInstance.nome.charAt(0).toUpperCase() : 'A'}
+                          </div>
+                          <div className="min-w-0 pr-2">
+                            <p className="font-bold text-zinc-900 truncate">
+                              {selectedAssocInstance?.nome}
+                            </p>
+                            <p className="text-xs text-zinc-500 mt-0.5 truncate">
+                              {selectedAssocInstance?.chapa && (
+                                <span className="mr-2 font-bold text-zinc-700 bg-zinc-200 px-1.5 py-0.5 rounded">
+                                  Chapa: {selectedAssocInstance.chapa}
+                                </span>
+                              )}
+                              <span>CPF: {selectedAssocInstance?.cpf}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            setSelectedAssociado('');
+                            setModalSearchTerm('');
+                          }}
+                          className="p-1.5 hover:bg-zinc-200 text-zinc-500 hover:text-zinc-900 rounded-lg transition-colors flex-shrink-0"
+                          title="Remover associado"
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+
+                      <button 
+                        onClick={generateQR}
+                        className="w-full py-4 bg-zinc-900 text-white rounded-2xl font-bold hover:bg-zinc-800 shadow-lg shadow-zinc-200 transition-all text-sm mt-2"
+                      >
+                        Gerar Código para {selectedAssocInstance?.nome.split(' ')[0]}
+                      </button>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="text-center space-y-6">
