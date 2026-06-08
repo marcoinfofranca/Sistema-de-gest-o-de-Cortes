@@ -15,6 +15,7 @@ export default function Pagamentos() {
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFornecedor, setSelectedFornecedor] = useState<string>('todos');
+  const [selectedMonth, setSelectedMonth] = useState<string>('todos');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { user } = useAuth();
 
@@ -49,12 +50,58 @@ export default function Pagamentos() {
     }
   };
 
-  const pendentes = atendimentos.filter(at => 
-    at.status_pagamento === 'pendente' && 
-    (selectedFornecedor === 'todos' || at.fornecedor_id === selectedFornecedor)
-  );
+  // Get unique months from all atendimentos to populate the dropdown
+  const getUniqueMonths = (atendimentosList: Atendimento[]) => {
+    const monthsMap = new Map<string, { value: string; label: string; date: Date }>();
+    
+    atendimentosList.forEach(at => {
+      if (!at.data_hora) return;
+      const date = typeof at.data_hora.toDate === 'function' ? at.data_hora.toDate() : new Date(at.data_hora);
+      const value = format(date, 'yyyy-MM');
+      const label = format(date, "MMMM 'de' yyyy", { locale: ptBR });
+      const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+      
+      if (!monthsMap.has(value)) {
+        monthsMap.set(value, { value, label: capitalizedLabel, date });
+      }
+    });
+
+    return Array.from(monthsMap.values())
+      .sort((a, b) => b.date.getTime() - a.date.getTime());
+  };
+
+  const uniqueMonths = getUniqueMonths(atendimentos);
+
+  const pendentes = atendimentos.filter(at => {
+    if (at.status_pagamento !== 'pendente') return false;
+    
+    const matchesFornecedor = selectedFornecedor === 'todos' || at.fornecedor_id === selectedFornecedor;
+    
+    let matchesMonth = true;
+    if (selectedMonth !== 'todos' && at.data_hora) {
+      const date = typeof at.data_hora.toDate === 'function' ? at.data_hora.toDate() : new Date(at.data_hora);
+      const atMonth = format(date, 'yyyy-MM');
+      matchesMonth = atMonth === selectedMonth;
+    }
+    
+    return matchesFornecedor && matchesMonth;
+  });
 
   const totalPendente = pendentes.reduce((acc, curr) => acc + curr.valor_aplicado, 0);
+
+  // Filter payment history by supplier and selected month
+  const filteredPagamentos = pagamentos.filter(p => {
+    const matchesFornecedor = selectedFornecedor === 'todos' || p.fornecedor_id === selectedFornecedor;
+    
+    let matchesMonth = true;
+    if (selectedMonth !== 'todos' && p.data_pagamento) {
+      const date = typeof p.data_pagamento.toDate === 'function' ? p.data_pagamento.toDate() : new Date(p.data_pagamento);
+      const pMonth = format(date, 'yyyy-MM');
+      matchesMonth = pMonth === selectedMonth;
+    }
+    
+    return matchesFornecedor && matchesMonth;
+  });
 
   const handleRegisterPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,6 +174,20 @@ export default function Pagamentos() {
                   <option value="todos">Todos os fornecedores</option>
                   {fornecedores.map(f => (
                     <option key={f.id} value={f.id}>{f.nome}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-zinc-700 mb-1">Mês do Atendimento</label>
+                <select 
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="w-full px-4 py-3 bg-zinc-50 border-none rounded-xl focus:ring-2 focus:ring-zinc-900"
+                >
+                  <option value="todos">Todos os meses</option>
+                  {uniqueMonths.map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
                   ))}
                 </select>
               </div>
@@ -218,30 +279,38 @@ export default function Pagamentos() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {pagamentos.map(p => {
-                const forn = fornecedores.find(f => f.id === p.fornecedor_id);
-                return (
-                  <tr key={p.id} className="hover:bg-zinc-50/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <p className="font-bold text-zinc-900">{forn?.nome || 'Desconhecido'}</p>
-                    </td>
-                    <td className="px-6 py-4 text-zinc-600">
-                      {format(p.data_pagamento.toDate(), 'dd/MM/yyyy')}
-                    </td>
-                    <td className="px-6 py-4 text-zinc-600">
-                      {p.forma_pagamento}
-                    </td>
-                    <td className="px-6 py-4 font-bold text-zinc-900">
-                      R$ {p.valor_total.toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <span className="px-3 py-1 bg-green-50 text-green-600 rounded-full text-xs font-bold">
-                        Confirmado
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {filteredPagamentos.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-6 py-10 text-center text-zinc-500">
+                    Nenhum histórico de pagamento para este filtro.
+                  </td>
+                </tr>
+              ) : (
+                filteredPagamentos.map(p => {
+                  const forn = fornecedores.find(f => f.id === p.fornecedor_id);
+                  return (
+                    <tr key={p.id} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <p className="font-bold text-zinc-900">{forn?.nome || 'Desconhecido'}</p>
+                      </td>
+                      <td className="px-6 py-4 text-zinc-600">
+                        {format(p.data_pagamento.toDate(), 'dd/MM/yyyy')}
+                      </td>
+                      <td className="px-6 py-4 text-zinc-600">
+                        {p.forma_pagamento}
+                      </td>
+                      <td className="px-6 py-4 font-bold text-zinc-900">
+                        R$ {p.valor_total.toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="px-3 py-1 bg-green-50 text-green-600 rounded-full text-xs font-bold">
+                          Confirmado
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
