@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, QrCode, X, Calendar, User, CheckCircle, AlertCircle, Clock, Filter, Plus, Download, Copy, Check } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Search, QrCode, X, Calendar, User, CheckCircle, AlertCircle, Clock, Filter, Plus, Download, Copy, Check, FileText } from 'lucide-react';
 import { fetchCollection, createDocument, updateDocument, fetchDocument } from '../services/firestoreService';
 import { QRCodeData, Associado, ConfiguracaoExpiracao } from '../types';
 import { format, addDays, isAfter } from 'date-fns';
@@ -152,20 +153,29 @@ export default function QRCodes() {
           <h2 className="text-3xl font-bold text-zinc-900">QR Codes</h2>
           <p className="text-zinc-500">Gerencie e emita novos códigos de benefício.</p>
         </div>
-        {isAdmin && (
-          <button 
-            onClick={() => {
-              setGeneratedQR(null);
-              setSelectedAssociado('');
-              setModalSearchTerm('');
-              setIsModalOpen(true);
-            }}
-            className="flex items-center justify-center gap-2 bg-zinc-900 text-white px-6 py-3 rounded-2xl font-bold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
+        <div className="flex flex-wrap items-center gap-3">
+          <Link 
+            to="/atendimentos?tab=qrcodes"
+            className="flex items-center justify-center gap-2 bg-white border border-zinc-200 text-zinc-700 px-5 py-3 rounded-2xl font-bold hover:bg-zinc-50 transition-all shadow-sm"
           >
-            <Plus size={20} />
-            Gerar Novo QR
-          </button>
-        )}
+            <FileText size={18} />
+            <span>Relatório com Horários</span>
+          </Link>
+          {isAdmin && (
+            <button 
+              onClick={() => {
+                setGeneratedQR(null);
+                setSelectedAssociado('');
+                setModalSearchTerm('');
+                setIsModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 bg-zinc-900 text-white px-6 py-3 rounded-2xl font-bold hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-200"
+            >
+              <Plus size={20} />
+              Gerar Novo QR
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">

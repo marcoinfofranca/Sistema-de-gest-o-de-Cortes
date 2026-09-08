@@ -61,6 +61,7 @@ export type QRCodeData = {
   expira_em: any;
   status: 'ativo' | 'utilizado' | 'expirado' | 'cancelado';
   criado_por: string;
+  utilizado_em?: any;
 };
 
 export type Atendimento = {

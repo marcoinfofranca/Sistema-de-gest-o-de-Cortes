@@ -297,7 +297,10 @@ export default function ValidarQR() {
       });
 
       // 3. Update QR Status
-      await updateDocument('qrcodes', qrData.id, { status: 'utilizado' });
+      await updateDocument('qrcodes', qrData.id, { 
+        status: 'utilizado',
+        utilizado_em: Timestamp.now()
+      });
 
       setSuccess(true);
     } catch (err) {
