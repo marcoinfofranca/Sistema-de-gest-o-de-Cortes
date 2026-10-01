@@ -19,7 +19,14 @@ import { format, startOfDay, endOfDay, isWithinInterval, isAfter } from 'date-fn
 import { ptBR } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable, { applyPlugin } from 'jspdf-autotable';
+
+// Register autotable plugin with jsPDF
+try {
+  applyPlugin(jsPDF);
+} catch (e) {
+  console.warn('Erro ao inicializar plugin jspdf-autotable:', e);
+}
 
 const cn = (...inputs: any[]) => inputs.filter(Boolean).join(' ');
 
@@ -35,6 +42,7 @@ export default function RelatorioQRCodes({ isAdmin, isBarbeiro, userFornecedorId
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [atendimentos, setAtendimentos] = useState<Atendimento[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // Filters
   const [startDate, setStartDate] = useState(format(startOfDay(new Date()), 'yyyy-MM-01'));
@@ -200,57 +208,98 @@ export default function RelatorioQRCodes({ isAdmin, isBarbeiro, userFornecedorId
 
   // Export to Excel
   const exportExcel = () => {
-    const data = filteredList.map(item => ({
-      'Código QR': item.qr.id,
-      'Associado': item.assoc?.nome || 'Desconhecido',
-      'CPF': item.assoc?.cpf || '-',
-      'Chapa': item.assoc?.chapa || '-',
-      'Status': item.qr.status.toUpperCase(),
-      'Data de Emissão': item.dataEmissao ? format(item.dataEmissao, 'dd/MM/yyyy') : '-',
-      'Horário de Emissão': item.dataEmissao ? format(item.dataEmissao, 'HH:mm:ss') : '-',
-      'Data de Utilização': item.dataUtilizacao ? format(item.dataUtilizacao, 'dd/MM/yyyy') : 'Não utilizado',
-      'Horário de Utilização': item.dataUtilizacao ? format(item.dataUtilizacao, 'HH:mm:ss') : '-',
-      'Barbearia / Fornecedor': item.forn?.nome || (item.qr.status === 'utilizado' ? 'Não informado' : '-'),
-      'Validade Até': item.dataExpira ? format(item.dataExpira, 'dd/MM/yyyy HH:mm') : '-'
-    }));
+    try {
+      if (filteredList.length === 0) {
+        alert('Nenhum registro encontrado para exportar com os filtros atuais.');
+        return;
+      }
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Relatório QR Codes");
-    XLSX.writeFile(wb, `relatorio_qrcodes_${startDate}_a_${endDate}.xlsx`);
+      const data = filteredList.map(item => ({
+        'Código QR': item.qr.id,
+        'Associado': item.assoc?.nome || 'Desconhecido',
+        'CPF': item.assoc?.cpf || '-',
+        'Chapa': item.assoc?.chapa || '-',
+        'Status': item.qr.status.toUpperCase(),
+        'Data de Emissão': item.dataEmissao ? format(item.dataEmissao, 'dd/MM/yyyy') : '-',
+        'Horário de Emissão': item.dataEmissao ? format(item.dataEmissao, 'HH:mm:ss') : '-',
+        'Data de Utilização': item.dataUtilizacao ? format(item.dataUtilizacao, 'dd/MM/yyyy') : 'Não utilizado',
+        'Horário de Utilização': item.dataUtilizacao ? format(item.dataUtilizacao, 'HH:mm:ss') : '-',
+        'Barbearia / Fornecedor': item.forn?.nome || (item.qr.status === 'utilizado' ? 'Não informado' : '-'),
+        'Validade Até': item.dataExpira ? format(item.dataExpira, 'dd/MM/yyyy HH:mm') : '-'
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Relatório QR Codes");
+      const safeStart = startDate ? startDate.replace(/[^0-9-]/g, '') : 'inicio';
+      const safeEnd = endDate ? endDate.replace(/[^0-9-]/g, '') : 'fim';
+      XLSX.writeFile(wb, `relatorio_qrcodes_${safeStart}_a_${safeEnd}.xlsx`);
+    } catch (error) {
+      console.error('Erro ao exportar planilha Excel:', error);
+      alert('Não foi possível gerar a planilha Excel. Por favor, tente novamente.');
+    }
   };
 
   // Export to PDF
   const exportPDF = () => {
-    const doc = new jsPDF({ orientation: 'landscape' });
-    
-    doc.setFontSize(16);
-    doc.text("Relatório de QR Codes - Ativos e Utilizados com Horários", 14, 15);
-    
-    doc.setFontSize(10);
-    doc.text(`Período: ${format(new Date(startDate + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(endDate + 'T23:59:59'), 'dd/MM/yyyy')} | Filtro Status: ${statusFilter.toUpperCase()}`, 14, 22);
-    doc.text(`Total: ${stats.total} | Ativos: ${stats.ativos} | Utilizados: ${stats.utilizados} | Taxa de Utilização: ${stats.taxaUtilizacao}% | Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm:ss')}`, 14, 28);
+    try {
+      if (filteredList.length === 0) {
+        alert('Nenhum registro encontrado para exportar com os filtros atuais.');
+        return;
+      }
 
-    const tableData = filteredList.map(item => [
-      item.assoc?.nome || 'Desconhecido',
-      item.assoc?.chapa ? `Chapa: ${item.assoc.chapa}` : (item.assoc?.cpf || '-'),
-      item.qr.status.toUpperCase(),
-      item.dataEmissao ? format(item.dataEmissao, 'dd/MM/yyyy HH:mm') : '-',
-      item.dataUtilizacao ? format(item.dataUtilizacao, 'dd/MM/yyyy HH:mm') : '-',
-      item.forn?.nome || (item.qr.status === 'utilizado' ? 'Atendimento' : '-'),
-      item.qr.id.substring(0, 10) + '...'
-    ]);
+      setExportingPdf(true);
 
-    (doc as any).autoTable({
-      head: [['Associado', 'Identificação', 'Status', 'Horário Emissão', 'Horário Utilização', 'Barbearia', 'Código QR']],
-      body: tableData,
-      startY: 34,
-      theme: 'grid',
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [24, 24, 27] }, // zinc-900
-    });
+      const doc = new jsPDF({ orientation: 'landscape' });
+      
+      doc.setFontSize(16);
+      doc.text("Relatório de QR Codes - Ativos e Utilizados com Horários", 14, 15);
+      
+      const sDateObj = startDate ? new Date(startDate + 'T00:00:00') : new Date();
+      const eDateObj = endDate ? new Date(endDate + 'T23:59:59') : new Date();
+      const sDateStr = isNaN(sDateObj.getTime()) ? startDate : format(sDateObj, 'dd/MM/yyyy');
+      const eDateStr = isNaN(eDateObj.getTime()) ? endDate : format(eDateObj, 'dd/MM/yyyy');
 
-    doc.save(`relatorio_qrcodes_${startDate}_a_${endDate}.pdf`);
+      doc.setFontSize(10);
+      doc.text(`Período: ${sDateStr} a ${eDateStr} | Filtro Status: ${statusFilter.toUpperCase()}`, 14, 22);
+      doc.text(`Total: ${stats.total} | Ativos: ${stats.ativos} | Utilizados: ${stats.utilizados} | Taxa de Utilização: ${stats.taxaUtilizacao}% | Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm:ss')}`, 14, 28);
+
+      const tableData = filteredList.map(item => [
+        item.assoc?.nome || 'Desconhecido',
+        item.assoc?.chapa ? `Chapa: ${item.assoc.chapa}` : (item.assoc?.cpf || '-'),
+        item.qr.status.toUpperCase(),
+        item.dataEmissao ? format(item.dataEmissao, 'dd/MM/yyyy HH:mm') : '-',
+        item.dataUtilizacao ? format(item.dataUtilizacao, 'dd/MM/yyyy HH:mm') : '-',
+        item.forn?.nome || (item.qr.status === 'utilizado' ? 'Atendimento' : '-'),
+        item.qr.id ? (item.qr.id.length > 14 ? item.qr.id.substring(0, 12) + '...' : item.qr.id) : '-'
+      ]);
+
+      const tableConfig = {
+        head: [['Associado', 'Identificação', 'Status', 'Horário Emissão', 'Horário Utilização', 'Barbearia', 'Código QR']],
+        body: tableData,
+        startY: 34,
+        theme: 'grid' as const,
+        styles: { fontSize: 8, cellPadding: 2.5 },
+        headStyles: { fillColor: [24, 24, 27] as [number, number, number] }, // zinc-900
+      };
+
+      if (typeof autoTable === 'function') {
+        autoTable(doc, tableConfig);
+      } else if (typeof (doc as any).autoTable === 'function') {
+        (doc as any).autoTable(tableConfig);
+      } else {
+        throw new Error('Plugin autoTable não encontrado.');
+      }
+
+      const safeStart = startDate ? startDate.replace(/[^0-9-]/g, '') : 'inicio';
+      const safeEnd = endDate ? endDate.replace(/[^0-9-]/g, '') : 'fim';
+      doc.save(`relatorio_qrcodes_${safeStart}_a_${safeEnd}.pdf`);
+    } catch (error) {
+      console.error('Erro ao gerar relatório de QR Codes em PDF:', error);
+      alert('Não foi possível gerar o arquivo PDF. Por favor, tente novamente ou verifique se o navegador bloqueou o download.');
+    } finally {
+      setExportingPdf(false);
+    }
   };
 
   const getStatusBadge = (status: string, expira_em: any) => {
@@ -310,11 +359,11 @@ export default function RelatorioQRCodes({ isAdmin, isBarbeiro, userFornecedorId
           </button>
           <button 
             onClick={exportPDF}
-            disabled={filteredList.length === 0}
+            disabled={filteredList.length === 0 || exportingPdf}
             className="flex items-center gap-2 bg-zinc-900 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-zinc-800 transition-all shadow-sm text-sm disabled:opacity-50"
           >
-            <FileDown size={16} />
-            PDF
+            {exportingPdf ? <RefreshCw size={16} className="animate-spin" /> : <FileDown size={16} />}
+            {exportingPdf ? 'Gerando...' : 'PDF'}
           </button>
         </div>
       </div>
