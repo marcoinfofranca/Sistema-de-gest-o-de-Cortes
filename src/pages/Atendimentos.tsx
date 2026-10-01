@@ -8,7 +8,13 @@ import { useAuth } from '../App';
 import { orderBy, where, Timestamp } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable, { applyPlugin } from 'jspdf-autotable';
+
+try {
+  applyPlugin(jsPDF);
+} catch (e) {
+  console.warn('Erro ao inicializar plugin jspdf-autotable:', e);
+}
 import RelatorioQRCodes from '../components/RelatorioQRCodes';
 
 const cn = (...inputs: any[]) => inputs.filter(Boolean).join(' ');
@@ -123,48 +129,72 @@ export default function Atendimentos() {
   };
 
   const exportPDF = () => {
-    const doc = new jsPDF();
-    const title = isAdmin ? "Relatório Geral de Atendimentos" : `Relatório de Atendimentos - ${fornecedores.find(f => f.id === userFornecedorId)?.nome || 'Barbeiro'}`;
-    
-    doc.setFontSize(18);
-    doc.text(title, 14, 20);
-    
-    doc.setFontSize(11);
-    doc.text(`Período: ${format(new Date(startDate + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(endDate + 'T23:59:59'), 'dd/MM/yyyy')}`, 14, 30);
-    doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 37);
+    try {
+      if (filteredAtendimentos.length === 0) {
+        alert('Nenhum atendimento encontrado para exportar com os filtros atuais.');
+        return;
+      }
 
-    const tableData = filteredAtendimentos.map(at => {
-      const assoc = associados.find(a => a.id === at.associado_id);
-      const forn = fornecedores.find(f => f.id === at.fornecedor_id);
-      return [
-        assoc?.nome || 'Desconhecido',
-        isAdmin ? (forn?.nome || 'Admin') : format(at.data_hora.toDate(), 'HH:mm'),
-        format(at.data_hora.toDate(), 'dd/MM/yyyy'),
-        `R$ ${at.valor_aplicado.toFixed(2)}`,
-        at.status_pagamento === 'pago' ? 'Pago' : 'Pendente'
-      ];
-    });
+      const doc = new jsPDF();
+      const title = isAdmin ? "Relatório Geral de Atendimentos" : `Relatório de Atendimentos - ${fornecedores.find(f => f.id === userFornecedorId)?.nome || 'Barbeiro'}`;
+      
+      doc.setFontSize(18);
+      doc.text(title, 14, 20);
+      
+      const sDateObj = startDate ? new Date(startDate + 'T00:00:00') : new Date();
+      const eDateObj = endDate ? new Date(endDate + 'T23:59:59') : new Date();
+      const sDateStr = isNaN(sDateObj.getTime()) ? startDate : format(sDateObj, 'dd/MM/yyyy');
+      const eDateStr = isNaN(eDateObj.getTime()) ? endDate : format(eDateObj, 'dd/MM/yyyy');
 
-    const head = isAdmin 
-      ? [['Associado', 'Fornecedor', 'Data', 'Valor', 'Status']]
-      : [['Associado', 'Hora', 'Data', 'Valor', 'Status']];
+      doc.setFontSize(11);
+      doc.text(`Período: ${sDateStr} a ${eDateStr}`, 14, 30);
+      doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 37);
 
-    (doc as any).autoTable({
-      head: head,
-      body: tableData,
-      startY: 45,
-      theme: 'grid',
-      headStyles: { fillColor: [39, 39, 42] }, // zinc-900
-    });
+      const tableData = filteredAtendimentos.map(at => {
+        const assoc = associados.find(a => a.id === at.associado_id);
+        const forn = fornecedores.find(f => f.id === at.fornecedor_id);
+        const atDate = at.data_hora?.toDate ? at.data_hora.toDate() : (at.data_hora ? new Date(at.data_hora) : null);
+        return [
+          assoc?.nome || 'Desconhecido',
+          isAdmin ? (forn?.nome || 'Admin') : (atDate ? format(atDate, 'HH:mm') : '-'),
+          atDate ? format(atDate, 'dd/MM/yyyy') : '-',
+          `R$ ${at.valor_aplicado.toFixed(2)}`,
+          at.status_pagamento === 'pago' ? 'Pago' : 'Pendente'
+        ];
+      });
 
-    const total = filteredAtendimentos.reduce((acc, curr) => acc + curr.valor_aplicado, 0);
-    const finalY = (doc as any).lastAutoTable.finalY || 45;
-    
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`Total: R$ ${total.toFixed(2)}`, 14, finalY + 15);
+      const head = isAdmin 
+        ? [['Associado', 'Fornecedor', 'Data', 'Valor', 'Status']]
+        : [['Associado', 'Hora', 'Data', 'Valor', 'Status']];
 
-    doc.save(`atendimentos_${startDate}_a_${endDate}.pdf`);
+      const tableConfig = {
+        head: head,
+        body: tableData,
+        startY: 45,
+        theme: 'grid' as const,
+        headStyles: { fillColor: [39, 39, 42] as [number, number, number] }, // zinc-900
+      };
+
+      if (typeof autoTable === 'function') {
+        autoTable(doc, tableConfig);
+      } else if (typeof (doc as any).autoTable === 'function') {
+        (doc as any).autoTable(tableConfig);
+      }
+
+      const total = filteredAtendimentos.reduce((acc, curr) => acc + curr.valor_aplicado, 0);
+      const finalY = (doc as any).lastAutoTable?.finalY || 45;
+      
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Total: R$ ${total.toFixed(2)}`, 14, finalY + 15);
+
+      const safeStart = startDate ? startDate.replace(/[^0-9-]/g, '') : 'inicio';
+      const safeEnd = endDate ? endDate.replace(/[^0-9-]/g, '') : 'fim';
+      doc.save(`atendimentos_${safeStart}_a_${safeEnd}.pdf`);
+    } catch (error) {
+      console.error('Erro ao gerar relatório de atendimentos em PDF:', error);
+      alert('Não foi possível gerar o arquivo PDF. Por favor, tente novamente.');
+    }
   };
 
   return (
